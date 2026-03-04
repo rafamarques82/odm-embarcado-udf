@@ -1,0 +1,39 @@
+# Compiled class files
+*.class
+target/
+build/
+
+# Package Files - JARs do ODM não devem ser versionados
+lib/*.jar
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Backup
+backup/
+*.bak
+
+# Credentials
+*.credentials
+*-credentials.properties
+secrets/
+.env
+*.jar
+dependency-reduced-pom.xml
