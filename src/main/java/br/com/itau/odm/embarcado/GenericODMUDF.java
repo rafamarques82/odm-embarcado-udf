@@ -102,8 +102,8 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
             outputData.put("__DecisionID__", generateDecisionId(inputObjectData));
             outputData.put("__ExecutionTimeMs__", executionTimeMs);
             
-            // Coletar métricas de execução
-            int rulesFired = response.getRulesFired();
+            // Coletar métricas de execução usando reflection (mesmo método do FacadeStatelessSession)
+            int rulesFired = tryGetTotalRulesFired(response);
             
             // Enviar métricas ILMT para S3 (se configurado)
             S3Metrics.recordExecution(rulesetPath, executionTimeMs, rulesFired, true);
@@ -115,27 +115,15 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
             System.err.println("[GenericODMUDF] Erro: " + e.getMessage());
             
             // Registrar erro nas métricas ILMT
-            Map<String, Object> inputData = gson.fromJson(inputJson, new TypeToken<Map<String, Object>>() {}.getType());
-            Map<String, Object> config = (Map<String, Object>) inputData.get("__config__");
-            String rulesetPath = config != null ? (String) config.get("ruleset_path") : "unknown";
-            S3Metrics.recordExecution(rulesetPath, durationMs, 0, false);
+            Map<String, Object> errorInputData = gson.fromJson(inputJson, new TypeToken<Map<String, Object>>() {}.getType());
+            Map<String, Object> errorConfig = (Map<String, Object>) errorInputData.get("__config__");
+            String errorRulesetPath = errorConfig != null ? (String) errorConfig.get("ruleset_path") : "unknown";
+            S3Metrics.recordExecution(errorRulesetPath, durationMs, 0, false);
             
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
             errorResponse.put("errorType", e.getClass().getSimpleName());
             errorResponse.put("__ExecutionTimeMs__", durationMs);
-            
-            // Enviar erro para S3 (se configurado)
-            if (S3Metrics.isReady()) {
-                Map<String, Object> s3Error = new HashMap<>(errorResponse);
-                s3Error.put("status", "error");
-                try {
-                    Map<String, Object> inputData = gson.fromJson(
-                        inputJson, new TypeToken<Map<String, Object>>() {}.getType());
-                    s3Error.put("input", inputData.get("data"));
-                } catch (Exception ignored) {}
-                S3Metrics.recordResult(s3Error);
-            }
             
             return gson.toJson(errorResponse);
         }
@@ -286,6 +274,28 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
             }
         }
         return id + "-" + new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+    }
+    
+    /**
+     * Tenta obter o número total de regras disparadas usando reflection.
+     * Mesmo método usado no FacadeStatelessSession para compatibilidade com KafkaMetrics.
+     */
+    private static int tryGetTotalRulesFired(IlrSessionResponse response) {
+        if (response == null) return 0;
+        try {
+            Object trace = response.getRulesetExecutionTrace();
+            if (trace == null) return 0;
+            
+            Method m = trace.getClass().getMethod("getTotalRulesFired");
+            Object val = m.invoke(trace);
+            if (val instanceof Number) {
+                long lf = ((Number) val).longValue();
+                return (lf <= Integer.MAX_VALUE) ? (int) lf : Integer.MAX_VALUE;
+            }
+        } catch (Exception ignore) {
+            // Se falhar, retorna 0 (não deve quebrar a execução)
+        }
+        return 0;
     }
     
     public static void shutdown() {

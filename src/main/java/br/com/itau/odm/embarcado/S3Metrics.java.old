@@ -162,35 +162,6 @@ final class S3Metrics {
             e.printStackTrace();
         }
     }
-    /**
-     * Retorna o número total de regras disparadas (compatibilidade com KafkaMetrics).
-     */
-    static long getRulesFired() {
-        return TOTAL_RULES_FIRED.get();
-    }
-    
-    /**
-     * Registra resultado de execução (alias para recordExecution).
-     */
-    static void recordResult(String rulesetPath, long durationMs, int rulesFired, boolean success) {
-        recordExecution(rulesetPath, durationMs, rulesFired, success);
-    }
-    
-    /**
-     * Força envio do relatório (alias para flushSummary).
-     */
-    static void flush() {
-        flushSummary();
-    }
-    
-    /**
-     * Retorna estatísticas de envio.
-     */
-    static String getStats() {
-        return String.format("S3Metrics[sent=%d, errors=%d, executions=%d, ready=%s]",
-                TOTAL_SENT.get(), TOTAL_ERRORS.get(), TOTAL_COUNT.get(), S3_READY);
-    }
-    
     
     /**
      * Verifica se S3 está configurado e pronto.
@@ -396,12 +367,11 @@ final class S3Metrics {
      */
     private static String escapeXml(String text) {
         if (text == null) return "";
-        // Must escape & first to avoid double-escaping
-        return text.replace("&", "&" + "amp;")
-                   .replace("<", "&" + "lt;")
-                   .replace(">", "&" + "gt;")
-                   .replace("\"", "&" + "quot;")
-                   .replace("'", "&" + "apos;");
+        return text.replace("&", "&")
+                   .replace("<", "<")
+                   .replace(">", ">")
+                   .replace("\"", """)
+                   .replace("'", "'");
     }
 }
 
