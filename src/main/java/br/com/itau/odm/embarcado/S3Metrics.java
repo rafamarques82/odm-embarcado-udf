@@ -259,10 +259,40 @@ final class S3Metrics {
      * Carrega configuração de variáveis de ambiente ou arquivo.
      */
     private static void loadConfiguration() {
-        // Tentar variáveis de ambiente primeiro
-        BUCKET_NAME = System.getenv("S3_METRICS_BUCKET");
-        String prefix = System.getenv("S3_METRICS_PREFIX");
-        String region = System.getenv("S3_METRICS_REGION");
+        // Tentar System Properties primeiro (AWS Glue job parameters)
+        BUCKET_NAME = System.getProperty("S3_METRICS_BUCKET");
+        String prefix = System.getProperty("S3_METRICS_PREFIX");
+        String region = System.getProperty("S3_METRICS_REGION");
+        
+        // Se não encontrou, tentar variáveis de ambiente
+        if (BUCKET_NAME == null || BUCKET_NAME.isEmpty()) {
+            BUCKET_NAME = System.getenv("S3_METRICS_BUCKET");
+        }
+        if (prefix == null || prefix.isEmpty()) {
+            prefix = System.getenv("S3_METRICS_PREFIX");
+        }
+        if (region == null || region.isEmpty()) {
+            region = System.getenv("S3_METRICS_REGION");
+        }
+        
+        // Limpar prefixo s3:// do bucket name se presente
+        if (BUCKET_NAME != null && BUCKET_NAME.startsWith("s3://")) {
+            BUCKET_NAME = BUCKET_NAME.substring(5); // Remove "s3://"
+            
+            // Se o bucket contém path (ex: s3://bucket/path), separar
+            int slashIndex = BUCKET_NAME.indexOf('/');
+            if (slashIndex > 0) {
+                String bucketPath = BUCKET_NAME.substring(slashIndex + 1);
+                BUCKET_NAME = BUCKET_NAME.substring(0, slashIndex);
+                
+                // Adicionar path ao prefix se não foi especificado
+                if (prefix == null || prefix.isEmpty()) {
+                    prefix = bucketPath;
+                } else {
+                    prefix = bucketPath + "/" + prefix;
+                }
+            }
+        }
         
         if (prefix != null && !prefix.isEmpty()) {
             BASE_PREFIX = prefix.endsWith("/") ? prefix : prefix + "/";

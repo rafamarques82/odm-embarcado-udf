@@ -5,27 +5,44 @@ O S3Metrics envia automaticamente métricas de execução do ODM para o S3 em fo
 
 ## Métodos de Configuração
 
-### Opção 1: Variáveis de Ambiente (Recomendado para Glue)
+### Opção 1: Job Parameters do AWS Glue (Recomendado)
 
-Configure as seguintes variáveis de ambiente no seu Job do AWS Glue:
-
-```
-S3_METRICS_BUCKET=nome-do-seu-bucket
-S3_METRICS_PREFIX=odm-metrics/
-S3_METRICS_REGION=us-east-1
-```
+Configure os seguintes job parameters no AWS Glue Console:
 
 #### Como configurar no AWS Glue Console:
 
 1. Acesse o AWS Glue Console
 2. Navegue até **Jobs** → Selecione seu job
-3. Na aba **Job details**, role até **Advanced properties**
-4. Em **Job parameters**, adicione:
-   - Key: `--S3_METRICS_BUCKET` → Value: `seu-bucket-name`
-   - Key: `--S3_METRICS_PREFIX` → Value: `odm-metrics/`
-   - Key: `--S3_METRICS_REGION` → Value: `us-east-1`
+3. Na aba **Job details**, role até **Job parameters**
+4. Adicione os seguintes parâmetros:
 
-**Nota:** No Glue, os parâmetros devem começar com `--` e serão convertidos em variáveis de ambiente.
+| Key | Value | Exemplo |
+|-----|-------|---------|
+| `--S3_METRICS_BUCKET` | Nome do bucket S3 | `s3://bre-laboratorio/embarcado` |
+| `--S3_METRICS_PREFIX` | Prefixo/caminho no bucket | `metricas/` |
+| `--S3_METRICS_REGION` | Região AWS | `sa-east-1` |
+
+**Importante:**
+- Os parâmetros devem começar com `--` (dois hífens)
+- O valor do bucket pode incluir `s3://` ou apenas o nome do bucket
+- O código remove automaticamente o prefixo `s3://` se presente
+
+**Exemplo da sua configuração atual:**
+```
+--S3_METRICS_BUCKET = s3://bre-laboratorio/embarcado
+--S3_METRICS_PREFIX = metricas/
+--S3_METRICS_REGION = sa-east-1
+```
+
+### Opção 2: Variáveis de Ambiente
+
+Alternativamente, você pode usar variáveis de ambiente (útil para testes locais):
+
+```bash
+export S3_METRICS_BUCKET=bre-laboratorio/embarcado
+export S3_METRICS_PREFIX=metricas/
+export S3_METRICS_REGION=sa-east-1
+```
 
 ### Opção 2: Arquivo de Configuração
 
