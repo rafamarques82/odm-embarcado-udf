@@ -9,7 +9,14 @@ import com.amazonaws.services.s3.model.PutObjectRequest;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Comparator;
 import java.util.Date;
 
 public final class S3MetricsHelper {
@@ -82,6 +89,61 @@ public final class S3MetricsHelper {
     }
     
     private static String buildIlmtXml(String rulesetPath, long totalDecisions, String startTime, String endTime) {
+        try {
+            // Usar DecisionMeteringReport para gerar XML ILMT oficial (mesmo que KafkaMetrics)
+            Path ilmtDir = Paths.get("./var/ibm/slmtags");
+            Files.createDirectories(ilmtDir);
+            
+            String batchId = "s3-" + System.currentTimeMillis();
+            DecisionMetering dm = new DecisionMetering("dba-metering");
+            DecisionMeteringReport rep = dm.createUsageReport(batchId);
+            
+            // Converter timestamps de String ISO para LocalDateTime
+            LocalDateTime startLdt = LocalDateTime.parse(startTime.substring(0, 19));
+            LocalDateTime endLdt = LocalDateTime.parse(endTime.substring(0, 19));
+            
+            rep.setStartTimeStamp(startLdt);
+            rep.setStopTimeStamp(endLdt);
+            rep.setNbDecisions(totalDecisions);
+            
+            rep.writeILMTFile();
+            
+            // Ler o arquivo ILMT gerado mais recente
+            Path latest = Files.list(ilmtDir)
+                    .filter(Files::isRegularFile)
+                    .max(Comparator.comparingLong(p -> p.toFile().lastModified()))
+                    .orElseThrow(() -> new IllegalStateException("Nenhum arquivo ILMT encontrado"));
+            
+            String content = Files.readString(latest, StandardCharsets.UTF_8);
+            
+            // Extrair cabeçalho + último bloco <Metric> (mesmo que KafkaMetrics)
+            String schemaStart = "<SchemaVersion>";
+            String softwareStart = "<SoftwareIdentity>";
+            String softwareEnd = "</SoftwareIdentity>";
+            String metricStart = "<Metric";
+            String metricEnd = "</Metric>";
+            
+            int schemaIdx = content.indexOf(schemaStart);
+            int softStartIdx = content.indexOf(softwareStart);
+            int softEndIdx = content.indexOf(softwareEnd) + softwareEnd.length();
+            
+            int lastMetricStartIdx = content.lastIndexOf(metricStart);
+            int lastMetricEndIdx = content.indexOf(metricEnd, lastMetricStartIdx) + metricEnd.length();
+            
+            String header = content.substring(schemaIdx, softEndIdx);
+            String lastMetric = content.substring(lastMetricStartIdx, lastMetricEndIdx);
+            
+            return header + "\n" + lastMetric;
+            
+        } catch (Exception e) {
+            System.err.println("[S3-HELPER] Erro ao gerar XML ILMT: " + e.getMessage());
+            e.printStackTrace();
+            // Fallback: formato simples
+            return buildSimpleIlmtXml(rulesetPath, totalDecisions, startTime, endTime);
+        }
+    }
+    
+    private static String buildSimpleIlmtXml(String rulesetPath, long totalDecisions, String startTime, String endTime) {
         StringBuilder xml = new StringBuilder();
         xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         xml.append("<DecisionServiceMetering>\n");
