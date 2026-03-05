@@ -47,10 +47,12 @@ from pyspark.sql.types import StringType, LongType
 INPUT_PATH = "s3://bre-laboratorio/embarcado/input/bre-rendaeleita/cenarios_10M.json"
 
 # --- JARs (S3) ---
+UDF_JAR_S3        = "s3://bre-laboratorio/embarcado/jars/odm-embarcado-udf-1.0.0.jar"
+UDF_JAR_LOCAL     = "/tmp/odm-embarcado-udf-1.0.0.jar"
 RULESET_JAR_S3    = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/bre_visaodorelacionamentobancario.jar"
 RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
-XOM_JAR_S3    = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
-XOM_PATH_LOCAL = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
+XOM_JAR_S3        = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
+XOM_PATH_LOCAL    = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
 
 # --- ODM ---
 RULESET_PATH = "/bre_visaodorelacionamentobancario/1.0/elege_faturamento"
@@ -122,6 +124,7 @@ def _s3_parse(s3_uri):
 
 t0 = time.time()
 for jar_s3, jar_local, label in [
+    (UDF_JAR_S3,     UDF_JAR_LOCAL,     "UDF ODM"),
     (RULESET_JAR_S3, RULESET_JAR_LOCAL, "Ruleset"),
     (XOM_JAR_S3,     XOM_PATH_LOCAL,    "XOM"),
 ]:
@@ -207,8 +210,10 @@ print(f"     connections max: 100")
 
 # 6. Broadcast de JARs
 print("\n  ⚙️  Adicionando JARs ao classpath...")
+jsc.addJar(UDF_JAR_LOCAL)
 jsc.addJar(XOM_PATH_LOCAL)
 jsc.addJar(RULESET_JAR_LOCAL)
+print(f"     ✅ UDF:     {UDF_JAR_LOCAL}")
 print(f"     ✅ XOM:     {XOM_PATH_LOCAL}")
 print(f"     ✅ Ruleset: {RULESET_JAR_LOCAL}")
 
