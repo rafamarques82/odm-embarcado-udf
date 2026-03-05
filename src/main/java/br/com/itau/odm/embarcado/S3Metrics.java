@@ -71,9 +71,14 @@ final class S3Metrics {
      * Compatível com KafkaMetrics.
      */
     static void recordExecution(String rulesetPath, long durationMs, int rulesFired, boolean success) {
+        System.out.println("[S3-METRICS-DEBUG] recordExecution CHAMADO! ruleset=" + rulesetPath + ", duration=" + durationMs + ", rules=" + rulesFired + ", success=" + success);
+        
         initIfNeeded();
         
+        System.out.println("[S3-METRICS-DEBUG] Após initIfNeeded - S3_READY=" + S3_READY + ", BUCKET_NAME=" + BUCKET_NAME);
+        
         if (!S3_READY) {
+            System.out.println("[S3-METRICS-DEBUG] S3 não está pronto, ignorando execução");
             return; // Silenciosamente ignora se S3 não estiver configurado
         }
         
@@ -274,6 +279,11 @@ final class S3Metrics {
         if (region == null || region.isEmpty()) {
             region = System.getenv("S3_METRICS_REGION");
         }
+        
+        // DEBUG: Imprimir o que foi encontrado
+        System.out.println("[S3-METRICS-DEBUG] System.getProperty('S3_METRICS_BUCKET'): " + System.getProperty("S3_METRICS_BUCKET"));
+        System.out.println("[S3-METRICS-DEBUG] System.getenv('S3_METRICS_BUCKET'): " + System.getenv("S3_METRICS_BUCKET"));
+        System.out.println("[S3-METRICS-DEBUG] BUCKET_NAME final: " + BUCKET_NAME);
         
         // Limpar prefixo s3:// do bucket name se presente
         if (BUCKET_NAME != null && BUCKET_NAME.startsWith("s3://")) {

@@ -105,8 +105,14 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
             // Coletar métricas de execução usando reflection (mesmo método do FacadeStatelessSession)
             int rulesFired = tryGetTotalRulesFired(response);
             
+            // DEBUG: Verificar se S3Metrics está pronto
+            System.out.println("[GenericODMUDF-DEBUG] Antes de recordExecution - S3Metrics.isReady(): " + S3Metrics.isReady());
+            System.out.println("[GenericODMUDF-DEBUG] rulesetPath: " + rulesetPath + ", executionTimeMs: " + executionTimeMs + ", rulesFired: " + rulesFired);
+            
             // Enviar métricas ILMT para S3 (se configurado)
             S3Metrics.recordExecution(rulesetPath, executionTimeMs, rulesFired, true);
+            
+            System.out.println("[GenericODMUDF-DEBUG] Depois de recordExecution - chamada concluída");
             
             return gson.toJson(outputData);
             
