@@ -420,42 +420,29 @@ print("📤 ENVIANDO MÉTRICAS ILMT PARA S3")
 print("=" * 80)
 
 try:
-    # Forçar carregamento da classe usando Thread.currentThread().getContextClassLoader()
+    # Forçar carregamento da classe
     current_thread = jvm.java.lang.Thread.currentThread()
     class_loader = current_thread.getContextClassLoader()
+    class_loader.loadClass("br.com.itau.odm.embarcado.S3MetricsHelper")
     
-    # Carregar a classe S3MetricsHelper
-    helper_class = class_loader.loadClass("br.com.itau.odm.embarcado.S3MetricsHelper")
+    # Agora tentar acessar diretamente via py4j
+    # Após loadClass, a classe deve estar disponível no gateway
+    from py4j.java_gateway import JavaClass
+    gateway = spark.sparkContext._gateway
     
-    # Obter classes para tipos de parâmetros
-    string_class = jvm.java.lang.Class.forName("java.lang.String")
-    long_class = jvm.java.lang.Long.TYPE
+    # Obter a classe através do gateway
+    S3MetricsHelper = JavaClass("br.com.itau.odm.embarcado.S3MetricsHelper", gateway._gateway_client)
     
-    # Criar array Java de Classes
-    param_types = jvm.java.lang.reflect.Array.newInstance(jvm.java.lang.Class, 7)
-    jvm.java.lang.reflect.Array.set(param_types, 0, string_class)
-    jvm.java.lang.reflect.Array.set(param_types, 1, string_class)
-    jvm.java.lang.reflect.Array.set(param_types, 2, string_class)
-    jvm.java.lang.reflect.Array.set(param_types, 3, string_class)
-    jvm.java.lang.reflect.Array.set(param_types, 4, long_class)
-    jvm.java.lang.reflect.Array.set(param_types, 5, long_class)
-    jvm.java.lang.reflect.Array.set(param_types, 6, long_class)
-    
-    # Obter o método sendIlmtMetrics
-    method = helper_class.getMethod("sendIlmtMetrics", param_types)
-    
-    # Criar array de argumentos
-    args = jvm.java.lang.reflect.Array.newInstance(jvm.java.lang.Object, 7)
-    jvm.java.lang.reflect.Array.set(args, 0, S3_METRICS_BUCKET)
-    jvm.java.lang.reflect.Array.set(args, 1, S3_METRICS_PREFIX)
-    jvm.java.lang.reflect.Array.set(args, 2, S3_METRICS_REGION)
-    jvm.java.lang.reflect.Array.set(args, 3, RULESET_PATH)
-    jvm.java.lang.reflect.Array.set(args, 4, jvm.java.lang.Long(total_processed))
-    jvm.java.lang.reflect.Array.set(args, 5, jvm.java.lang.Long(start_time_ms))
-    jvm.java.lang.reflect.Array.set(args, 6, jvm.java.lang.Long(end_time_ms))
-    
-    # Invocar o método estático (null como primeiro argumento para métodos estáticos)
-    ilmt_success = method.invoke(None, args)
+    # Chamar o método estático diretamente
+    ilmt_success = S3MetricsHelper.sendIlmtMetrics(
+        S3_METRICS_BUCKET,
+        S3_METRICS_PREFIX,
+        S3_METRICS_REGION,
+        RULESET_PATH,
+        total_processed,
+        start_time_ms,
+        end_time_ms
+    )
     
     if ilmt_success:
         print(f"  ✅ Métricas ILMT enviadas com sucesso!")
