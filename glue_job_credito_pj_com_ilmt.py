@@ -427,8 +427,8 @@ try:
     # Carregar a classe S3MetricsHelper
     helper_class = class_loader.loadClass("br.com.itau.odm.embarcado.S3MetricsHelper")
     
-    # Criar array de tipos de parâmetros para getMethod
-    string_class = jvm.java.lang.String().getClass()
+    # Obter classes para tipos de parâmetros
+    string_class = jvm.java.lang.Class.forName("java.lang.String")
     long_class = jvm.java.lang.Long.TYPE
     
     # Criar array Java de Classes
