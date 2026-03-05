@@ -44,7 +44,114 @@ export S3_METRICS_PREFIX=metricas/
 export S3_METRICS_REGION=sa-east-1
 ```
 
-### Opção 2: Arquivo de Configuração
+### Opção 2: Variáveis de Ambiente no AWS Glue
+
+No AWS Glue, você pode configurar variáveis de ambiente de duas formas:
+
+#### A) Via Console AWS Glue (Recomendado)
+
+1. Acesse o AWS Glue Console
+2. Navegue até **Jobs** → Selecione seu job
+3. Na aba **Job details**, role até **Advanced properties**
+4. Expanda a seção **Environment variables**
+5. Adicione as variáveis:
+
+```
+S3_METRICS_BUCKET=bre-laboratorio/embarcado
+S3_METRICS_PREFIX=metricas/
+S3_METRICS_REGION=sa-east-1
+```
+
+**Nota:** Ao usar variáveis de ambiente, NÃO use o prefixo `s3://` no bucket.
+
+#### B) Via Script Python do Glue Job
+
+Se você estiver usando um script Python no Glue, pode definir as variáveis antes de chamar a UDF:
+
+```python
+import os
+import sys
+from awsglue.context import GlueContext
+from pyspark.context import SparkContext
+
+# Configurar variáveis de ambiente
+os.environ['S3_METRICS_BUCKET'] = 'bre-laboratorio/embarcado'
+os.environ['S3_METRICS_PREFIX'] = 'metricas/'
+os.environ['S3_METRICS_REGION'] = 'sa-east-1'
+
+# Seu código Glue continua aqui...
+sc = SparkContext()
+glueContext = GlueContext(sc)
+```
+
+#### C) Via AWS CLI (para criar/atualizar job)
+
+```bash
+aws glue update-job \
+  --job-name seu-job-odm \
+  --job-update '{
+    "Command": {
+      "Name": "glueetl",
+      "ScriptLocation": "s3://seu-bucket/scripts/seu-script.py"
+    },
+    "DefaultArguments": {
+      "--enable-metrics": "",
+      "--enable-continuous-cloudwatch-log": "true"
+    },
+    "ExecutionProperty": {
+      "MaxConcurrentRuns": 1
+    },
+    "Environment": {
+      "S3_METRICS_BUCKET": "bre-laboratorio/embarcado",
+      "S3_METRICS_PREFIX": "metricas/",
+      "S3_METRICS_REGION": "sa-east-1"
+    }
+  }'
+```
+
+**Nota:** A sintaxe exata pode variar dependendo da versão do AWS CLI.
+
+#### D) Via CloudFormation/Terraform
+
+**CloudFormation:**
+```yaml
+Resources:
+  MyGlueJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: odm-embarcado-job
+      Role: !GetAtt GlueJobRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: s3://bucket/script.py
+      DefaultArguments:
+        "--job-language": "python"
+        "--S3_METRICS_BUCKET": "bre-laboratorio/embarcado"
+        "--S3_METRICS_PREFIX": "metricas/"
+        "--S3_METRICS_REGION": "sa-east-1"
+```
+
+**Terraform:**
+```hcl
+resource "aws_glue_job" "odm_job" {
+  name     = "odm-embarcado-job"
+  role_arn = aws_iam_role.glue_role.arn
+
+  command {
+    name            = "glueetl"
+    script_location = "s3://bucket/script.py"
+  }
+
+  default_arguments = {
+    "--job-language"        = "python"
+    "--S3_METRICS_BUCKET"   = "bre-laboratorio/embarcado"
+    "--S3_METRICS_PREFIX"   = "metricas/"
+    "--S3_METRICS_REGION"   = "sa-east-1"
+  }
+}
+```
+
+### Opção 3: Arquivo de Configuração
 
 Crie um arquivo `s3-config.properties` no classpath:
 
