@@ -420,18 +420,35 @@ print("📤 ENVIANDO MÉTRICAS ILMT PARA S3")
 print("=" * 80)
 
 try:
-    # Obter referência para a classe Java S3MetricsHelper
-    S3MetricsHelper = jvm.br.com.itau.odm.embarcado.S3MetricsHelper
+    # Forçar carregamento da classe usando Thread.currentThread().getContextClassLoader()
+    current_thread = jvm.java.lang.Thread.currentThread()
+    class_loader = current_thread.getContextClassLoader()
     
-    # Chamar método estático Java para enviar métricas
-    ilmt_success = S3MetricsHelper.sendIlmtMetrics(
-        S3_METRICS_BUCKET,      # bucketName
-        S3_METRICS_PREFIX,      # prefix
-        S3_METRICS_REGION,      # region
-        RULESET_PATH,           # rulesetPath
-        total_processed,        # totalDecisions
-        start_time_ms,          # startTimeMs
-        end_time_ms             # endTimeMs
+    # Carregar a classe S3MetricsHelper
+    helper_class = class_loader.loadClass("br.com.itau.odm.embarcado.S3MetricsHelper")
+    
+    # Obter o método sendIlmtMetrics
+    method = helper_class.getMethod(
+        "sendIlmtMetrics",
+        jvm.java.lang.Class.forName("java.lang.String"),
+        jvm.java.lang.Class.forName("java.lang.String"),
+        jvm.java.lang.Class.forName("java.lang.String"),
+        jvm.java.lang.Class.forName("java.lang.String"),
+        jvm.java.lang.Long.TYPE,
+        jvm.java.lang.Long.TYPE,
+        jvm.java.lang.Long.TYPE
+    )
+    
+    # Invocar o método estático (null como primeiro argumento para métodos estáticos)
+    ilmt_success = method.invoke(
+        None,
+        S3_METRICS_BUCKET,
+        S3_METRICS_PREFIX,
+        S3_METRICS_REGION,
+        RULESET_PATH,
+        total_processed,
+        start_time_ms,
+        end_time_ms
     )
     
     if ilmt_success:
@@ -443,6 +460,8 @@ try:
         
 except Exception as e:
     print(f"  ❌ ERRO ao enviar métricas ILMT: {str(e)}")
+    import traceback
+    traceback.print_exc()
     import traceback
     traceback.print_exc()
 
