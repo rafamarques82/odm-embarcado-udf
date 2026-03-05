@@ -427,29 +427,35 @@ try:
     # Carregar a classe S3MetricsHelper
     helper_class = class_loader.loadClass("br.com.itau.odm.embarcado.S3MetricsHelper")
     
+    # Criar array de tipos de parâmetros para getMethod
+    string_class = jvm.java.lang.String().getClass()
+    long_class = jvm.java.lang.Long.TYPE
+    
+    # Criar array Java de Classes
+    param_types = jvm.java.lang.reflect.Array.newInstance(jvm.java.lang.Class, 7)
+    jvm.java.lang.reflect.Array.set(param_types, 0, string_class)
+    jvm.java.lang.reflect.Array.set(param_types, 1, string_class)
+    jvm.java.lang.reflect.Array.set(param_types, 2, string_class)
+    jvm.java.lang.reflect.Array.set(param_types, 3, string_class)
+    jvm.java.lang.reflect.Array.set(param_types, 4, long_class)
+    jvm.java.lang.reflect.Array.set(param_types, 5, long_class)
+    jvm.java.lang.reflect.Array.set(param_types, 6, long_class)
+    
     # Obter o método sendIlmtMetrics
-    method = helper_class.getMethod(
-        "sendIlmtMetrics",
-        jvm.java.lang.Class.forName("java.lang.String"),
-        jvm.java.lang.Class.forName("java.lang.String"),
-        jvm.java.lang.Class.forName("java.lang.String"),
-        jvm.java.lang.Class.forName("java.lang.String"),
-        jvm.java.lang.Long.TYPE,
-        jvm.java.lang.Long.TYPE,
-        jvm.java.lang.Long.TYPE
-    )
+    method = helper_class.getMethod("sendIlmtMetrics", param_types)
+    
+    # Criar array de argumentos
+    args = jvm.java.lang.reflect.Array.newInstance(jvm.java.lang.Object, 7)
+    jvm.java.lang.reflect.Array.set(args, 0, S3_METRICS_BUCKET)
+    jvm.java.lang.reflect.Array.set(args, 1, S3_METRICS_PREFIX)
+    jvm.java.lang.reflect.Array.set(args, 2, S3_METRICS_REGION)
+    jvm.java.lang.reflect.Array.set(args, 3, RULESET_PATH)
+    jvm.java.lang.reflect.Array.set(args, 4, jvm.java.lang.Long(total_processed))
+    jvm.java.lang.reflect.Array.set(args, 5, jvm.java.lang.Long(start_time_ms))
+    jvm.java.lang.reflect.Array.set(args, 6, jvm.java.lang.Long(end_time_ms))
     
     # Invocar o método estático (null como primeiro argumento para métodos estáticos)
-    ilmt_success = method.invoke(
-        None,
-        S3_METRICS_BUCKET,
-        S3_METRICS_PREFIX,
-        S3_METRICS_REGION,
-        RULESET_PATH,
-        total_processed,
-        start_time_ms,
-        end_time_ms
-    )
+    ilmt_success = method.invoke(None, args)
     
     if ilmt_success:
         print(f"  ✅ Métricas ILMT enviadas com sucesso!")
@@ -462,7 +468,6 @@ except Exception as e:
     print(f"  ❌ ERRO ao enviar métricas ILMT: {str(e)}")
     import traceback
     traceback.print_exc()
-    import traceback
     traceback.print_exc()
 
 # =============================================================================
