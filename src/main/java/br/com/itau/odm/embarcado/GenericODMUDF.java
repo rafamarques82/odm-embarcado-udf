@@ -310,11 +310,9 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
             System.out.println("[GenericODMUDF] Métricas enviadas ao Kafka");
         }
         
-        // Flush S3 (envia resultados pendentes)
+        // S3Metrics envia automaticamente no shutdown (não precisa flush manual)
         if (S3Metrics.isReady()) {
-            S3Metrics.flush();
-            System.out.println("[GenericODMUDF] Resultados enviados ao S3");
-            System.out.println("[GenericODMUDF] Estatísticas S3: " + S3Metrics.getStats());
+            System.out.println("[GenericODMUDF] S3Metrics ativo - métricas serão enviadas no shutdown");
         }
     }
 }

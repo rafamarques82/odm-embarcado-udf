@@ -1,0 +1,17 @@
+# Configuração do S3Metrics para envio automático de métricas ILMT
+# Copie este arquivo para odm-s3.properties e configure os valores
+
+# Bucket S3 onde as métricas serão armazenadas (OBRIGATÓRIO)
+bucket=bre-laboratorio
+
+# Prefixo/pasta dentro do bucket (opcional, default: odm-metrics)
+prefix=embarcado/ilmt-metrics
+
+# Região AWS do bucket (opcional, default: us-east-1)
+region=us-east-1
+
+# Notas:
+# - As credenciais AWS são obtidas automaticamente via DefaultAWSCredentialsProviderChain
+# - As métricas são enviadas automaticamente no shutdown da JVM
+# - Formato: s3://{bucket}/{prefix}/{yyyy/MM/dd/HH}/ilmt-report-{timestamp}.xml
+# - Também gera: s3://{bucket}/{prefix}/{yyyy/MM/dd/HH}/custom-report-{timestamp}.xml
