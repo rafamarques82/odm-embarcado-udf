@@ -412,50 +412,34 @@ except Exception as e:
     print(f"     ⚠️ Não foi possível analisar tempos: {e}")
 
 # =============================================================================
-# 📤 ENVIAR MÉTRICAS ILMT PARA S3
+# 📤 MÉTRICAS ILMT PARA S3 (AUTOMÁTICO)
 # =============================================================================
+#
+# As métricas ILMT são enviadas AUTOMATICAMENTE pelo S3Metrics no shutdown da JVM.
+# Não é necessário chamar nenhum método do Python.
+#
+# Configuração (já feita nas linhas 180-182):
+#   jvm.System.setProperty("S3_METRICS_BUCKET", S3_METRICS_BUCKET)
+#   jvm.System.setProperty("S3_METRICS_PREFIX", S3_METRICS_PREFIX)
+#   jvm.System.setProperty("S3_METRICS_REGION", S3_METRICS_REGION)
+#
+# O S3Metrics acumula automaticamente:
+#   - Total de execuções
+#   - Sucessos vs erros
+#   - Tempo de execução
+#   - Regras disparadas
+#   - Ruleset path
+#
+# No shutdown, envia para S3:
+#   s3://{bucket}/{prefix}/yyyy/MM/dd/HH/ilmt-report-{timestamp}.xml
+#   s3://{bucket}/{prefix}/yyyy/MM/dd/HH/custom-report-{timestamp}.xml
 
 print("\n" + "=" * 80)
-print("📤 ENVIANDO MÉTRICAS ILMT PARA S3")
+print("📤 MÉTRICAS ILMT CONFIGURADAS (envio automático no shutdown)")
 print("=" * 80)
-
-try:
-    # Forçar carregamento da classe
-    current_thread = jvm.java.lang.Thread.currentThread()
-    class_loader = current_thread.getContextClassLoader()
-    class_loader.loadClass("br.com.itau.odm.embarcado.S3MetricsHelper")
-    
-    # Agora tentar acessar diretamente via py4j
-    # Após loadClass, a classe deve estar disponível no gateway
-    from py4j.java_gateway import JavaClass
-    gateway = spark.sparkContext._gateway
-    
-    # Obter a classe através do gateway
-    S3MetricsHelper = JavaClass("br.com.itau.odm.embarcado.S3MetricsHelper", gateway._gateway_client)
-    
-    # Chamar o método estático diretamente
-    ilmt_success = S3MetricsHelper.sendIlmtMetrics(
-        S3_METRICS_BUCKET,
-        S3_METRICS_PREFIX,
-        S3_METRICS_REGION,
-        RULESET_PATH,
-        total_processed,
-        start_time_ms,
-        end_time_ms
-    )
-    
-    if ilmt_success:
-        print(f"  ✅ Métricas ILMT enviadas com sucesso!")
-        print(f"     Bucket: s3://{S3_METRICS_BUCKET}/{S3_METRICS_PREFIX}")
-        print(f"     Decisões: {total_processed:,}")
-    else:
-        print(f"  ⚠️  Erro ao enviar métricas ILMT")
-        
-except Exception as e:
-    print(f"  ❌ ERRO ao enviar métricas ILMT: {str(e)}")
-    import traceback
-    traceback.print_exc()
-    traceback.print_exc()
+print(f"  Bucket: s3://{S3_METRICS_BUCKET}/{S3_METRICS_PREFIX}")
+print(f"  Decisões processadas: {total_processed:,}")
+print(f"  ✅ Métricas serão enviadas automaticamente ao finalizar o job")
 
 # =============================================================================
 # 💾 SALVAR RESULTADOS NO S3
