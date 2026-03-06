@@ -313,10 +313,10 @@ print(f"   Parâm.:   {config_odm['input_param_name']}")
 # 🔄 PREPARAR INPUT PARA ODM
 # =============================================================================
 
-# Copiar config para variável local para evitar captura de escopo global
-config_json_str = json.dumps(config_odm)
+# Serializar config uma vez para usar na closure
+CONFIG_JSON_STR = json.dumps(config_odm)
 
-def create_odm_input(row, config_str=config_json_str):
+def create_odm_input(row):
     """Cria payload ODM a partir de uma linha do DataFrame."""
     row_dict  = row.asDict(recursive=True)
     record_id = row_dict.pop('record_id')
@@ -324,7 +324,8 @@ def create_odm_input(row, config_str=config_json_str):
     cliente_data = row_dict.get('Cliente', {})
     if decision_id:
         cliente_data['DecisionID_'] = decision_id
-    payload = '{"__config__":' + config_str + ',"data":' + json.dumps(cliente_data) + '}'
+    # Usar variável global CONFIG_JSON_STR que será capturada pela closure
+    payload = '{"__config__":' + CONFIG_JSON_STR + ',"data":' + json.dumps(cliente_data) + '}'
     return (record_id, payload)
 
 t0 = time.time()
