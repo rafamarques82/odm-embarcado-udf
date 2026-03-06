@@ -237,24 +237,26 @@ except Exception as e:
 # 📊 CRIAR ACCUMULATOR PARA MÉTRICAS ILMT
 # =============================================================================
 
-print("\n📊 Criando Spark Accumulator para métricas ILMT...")
+print("\n📊 Criando Accumulators para métricas ILMT...")
 try:
-    # Criar accumulator usando gateway do py4j
-    gateway = spark.sparkContext._gateway
-    AccumulatorClass = gateway.jvm.br.com.itau.odm.embarcado.S3MetricsAccumulator
-    metrics_accumulator = AccumulatorClass()
+    # Usar LongAccumulators nativos do Spark (mais simples e confiável)
+    acc_total = spark.sparkContext.accumulator(0)
+    acc_ok = spark.sparkContext.accumulator(0)
+    acc_error = spark.sparkContext.accumulator(0)
+    acc_duration = spark.sparkContext.accumulator(0)
+    acc_rules = spark.sparkContext.accumulator(0)
     
-    # Registrar no Spark
-    spark.sparkContext._jsc.sc().register(metrics_accumulator, "ODM_ILMT_Metrics")
+    # Broadcast do ruleset path
+    ruleset_broadcast = spark.sparkContext.broadcast(RULESET_PATH)
     
-    # Fazer broadcast para todos os executors
-    accumulator_broadcast = spark.sparkContext.broadcast(metrics_accumulator)
-    
-    print("✅ Accumulator criado e registrado")
-    print(f"   Nome: ODM_ILMT_Metrics")
-    print(f"   Broadcast ID: {accumulator_broadcast.id}")
+    print("✅ Accumulators criados:")
+    print(f"   - Total execuções")
+    print(f"   - Sucessos")
+    print(f"   - Erros")
+    print(f"   - Duração total")
+    print(f"   - Regras disparadas")
 except Exception as e:
-    print(f"❌ ERRO ao criar accumulator: {e}")
+    print(f"❌ ERRO ao criar accumulators: {e}")
     import traceback
     traceback.print_exc()
     raise
@@ -355,10 +357,10 @@ input_count = df_with_input.count()
 
 print("\n📊 Criando UDF wrapper com tracking de métricas...")
 
-# Criar UDF Python que chama a UDF Java e registra métricas no accumulator
+# Criar UDF Python que chama a UDF Java e registra métricas nos accumulators
 def execute_odm_with_metrics(odm_input):
     """
-    Wrapper que executa a UDF Java e registra métricas no accumulator.
+    Wrapper que executa a UDF Java e registra métricas nos accumulators.
     """
     import time
     start_time = time.time()
@@ -375,27 +377,23 @@ def execute_odm_with_metrics(odm_input):
         has_error = "error" in result_dict
         rules_fired = result_dict.get("__RulesFired__", 0)
         
-        # Registrar no accumulator
-        acc = accumulator_broadcast.value
-        acc.recordExecution(
-            RULESET_PATH,      # ruleset path
-            duration_ms,        # duration
-            rules_fired,        # rules fired
-            not has_error       # success
-        )
+        # Registrar nos accumulators
+        acc_total.add(1)
+        if has_error:
+            acc_error.add(1)
+        else:
+            acc_ok.add(1)
+        acc_duration.add(duration_ms)
+        acc_rules.add(rules_fired)
         
         return result_json
         
     except Exception as e:
         # Em caso de erro, registrar como falha
         duration_ms = int((time.time() - start_time) * 1000)
-        acc = accumulator_broadcast.value
-        acc.recordExecution(
-            RULESET_PATH,
-            duration_ms,
-            0,
-            False  # error
-        )
+        acc_total.add(1)
+        acc_error.add(1)
+        acc_duration.add(duration_ms)
         # Re-lançar exceção
         raise e
 
@@ -500,20 +498,25 @@ print("📤 COLETANDO MÉTRICAS ILMT AGREGADAS")
 print("=" * 80)
 
 try:
-    # Coletar métricas agregadas de todos os executors
-    final_metrics = metrics_accumulator.value()
+    # Coletar valores dos accumulators
+    total_count = acc_total.value
+    ok_count = acc_ok.value
+    error_count = acc_error.value
+    total_duration = acc_duration.value
+    total_rules = acc_rules.value
+    ruleset_path = ruleset_broadcast.value
     
     print(f"\n  📊 Métricas Agregadas:")
-    print(f"     Total execuções:  {final_metrics.totalCount:,}")
-    print(f"     Sucesso:          {final_metrics.okCount:,}")
-    print(f"     Erros:            {final_metrics.errorCount:,}")
-    print(f"     Duração total:    {final_metrics.totalDurationMs:,}ms")
-    print(f"     Regras disparadas: {final_metrics.totalRulesFired:,}")
-    print(f"     Ruleset:          {final_metrics.rulesetPath}")
+    print(f"     Total execuções:   {total_count:,}")
+    print(f"     Sucesso:           {ok_count:,}")
+    print(f"     Erros:             {error_count:,}")
+    print(f"     Duração total:     {total_duration:,}ms")
+    print(f"     Regras disparadas: {total_rules:,}")
+    print(f"     Ruleset:           {ruleset_path}")
     
-    if final_metrics.totalCount > 0:
-        avg_duration = final_metrics.totalDurationMs / final_metrics.totalCount
-        print(f"     Tempo médio:      {avg_duration:.2f}ms")
+    if total_count > 0:
+        avg_duration = total_duration / total_count
+        print(f"     Tempo médio:       {avg_duration:.2f}ms")
     
     # Enviar para S3 usando S3MetricsAggregator
     print(f"\n  📤 Enviando para S3: s3://{S3_METRICS_BUCKET}/{S3_METRICS_PREFIX}")
@@ -523,14 +526,14 @@ try:
         S3_METRICS_BUCKET,
         S3_METRICS_PREFIX,
         S3_METRICS_REGION,
-        final_metrics.totalCount,
-        final_metrics.okCount,
-        final_metrics.errorCount,
-        final_metrics.totalDurationMs,
-        final_metrics.totalRulesFired,
-        final_metrics.rulesetPath,
-        final_metrics.startTimestampMs,
-        final_metrics.endTimestampMs
+        total_count,
+        ok_count,
+        error_count,
+        total_duration,
+        total_rules,
+        ruleset_path,
+        start_time_ms,
+        end_time_ms
     )
     
     print(f"  ✅ Métricas ILMT enviadas com sucesso!")
@@ -538,6 +541,8 @@ try:
 except Exception as e:
     print(f"  ⚠️  AVISO: Erro ao enviar métricas ILMT: {e}")
     print(f"     O job continuará normalmente")
+    import traceback
+    traceback.print_exc()
 
 # =============================================================================
 # 💾 SALVAR RESULTADOS NO S3
