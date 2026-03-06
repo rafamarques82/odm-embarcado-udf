@@ -55,6 +55,10 @@ final class S3Metrics {
     private static final AtomicLong TOTAL_DURATION_MS  = new AtomicLong(0);
     private static final AtomicLong TOTAL_RULES_FIRED  = new AtomicLong(0);
     private static final AtomicBoolean SUMMARY_SENT    = new AtomicBoolean(false);
+    
+    /* ===== Flush periódico ===== */
+    private static final long FLUSH_INTERVAL = 10000; // Enviar a cada 10k execuções
+    private static final AtomicLong LAST_FLUSH_COUNT = new AtomicLong(0);
 
     /* ===== Janela de tempo da execução agregada ===== */
     private static final AtomicLong START_TS_MS = new AtomicLong(0L);
@@ -78,14 +82,14 @@ final class S3Metrics {
         }
     }
 
-    /** Registra UMA execução; NÃO publica nada agora. */
+    /** Registra UMA execução e faz flush periódico a cada FLUSH_INTERVAL execuções */
     static void recordExecution(String rulesetPath, long durationMs, Integer rulesFired, boolean success) {
         // Atualizar ruleset se fornecido
         if (rulesetPath != null && !rulesetPath.isBlank()) {
             RULESET_PATH = rulesetPath;
         }
         
-        TOTAL_COUNT.incrementAndGet();
+        long currentCount = TOTAL_COUNT.incrementAndGet();
         if (success) OK_COUNT.incrementAndGet();
         else ERROR_COUNT.incrementAndGet();
 
@@ -95,6 +99,19 @@ final class S3Metrics {
         long now = System.currentTimeMillis();
         START_TS_MS.compareAndSet(0L, now);
         END_TS_MS.set(now);
+        
+        // Flush periódico: a cada FLUSH_INTERVAL execuções, enviar snapshot para S3
+        long lastFlush = LAST_FLUSH_COUNT.get();
+        if (currentCount - lastFlush >= FLUSH_INTERVAL) {
+            if (LAST_FLUSH_COUNT.compareAndSet(lastFlush, currentCount)) {
+                // Apenas uma thread fará o flush
+                try {
+                    flushPeriodicSnapshot();
+                } catch (Exception e) {
+                    System.err.println("[ODM-S3] Erro no flush periódico: " + e.getMessage());
+                }
+            }
+        }
     }
     
     /** Sobrecarga para compatibilidade com KafkaMetrics */
@@ -190,6 +207,39 @@ final class S3Metrics {
         }
     }
 
+    /** Envia snapshot periódico (não reseta contadores) */
+    private static void flushPeriodicSnapshot() {
+        if (!S3_READY) return;
+        
+        try {
+            final long totalCount    = TOTAL_COUNT.get();
+            final long okCount       = OK_COUNT.get();
+            final long errorCount    = ERROR_COUNT.get();
+            final long totalDuration = TOTAL_DURATION_MS.get();
+            final long avgDuration   = (totalCount == 0 ? 0 : totalDuration / totalCount);
+            final long startMs       = (START_TS_MS.get() == 0 ? System.currentTimeMillis() : START_TS_MS.get());
+            final long endMs         = System.currentTimeMillis();
+            final String rulesetSnap = RULESET_PATH;
+            
+            System.out.printf("[ODM-S3] Flush periódico: total=%d ok=%d err=%d durMs=%d avg=%d ruleset=%s%n",
+                    totalCount, okCount, errorCount, totalDuration, avgDuration, rulesetSnap);
+            
+            // Enviar XMLs para S3 (snapshot parcial)
+            String ilmtXml = buildIlmtXmlWithDecisionMetering(totalCount, startMs, endMs);
+            String customXml = buildCustomXml(totalCount, okCount, errorCount, totalDuration, avgDuration, rulesetSnap, endMs);
+            
+            sendToS3(ilmtXml, "ilmt-periodic", endMs);
+            System.out.println("[ODM-S3] XML ILMT periódico enviado (decisions=" + totalCount + ")");
+            
+            sendToS3(customXml, "custom-periodic", endMs);
+            System.out.println("[ODM-S3] XML customizado periódico enviado");
+            
+        } catch (Exception e) {
+            System.err.println("[ODM-S3] Erro no flush periódico: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
     /** Envia o RESUMO uma única vez */
     private static void flushSummaryOnce() {
         if (!SUMMARY_SENT.compareAndSet(false, true)) return;
