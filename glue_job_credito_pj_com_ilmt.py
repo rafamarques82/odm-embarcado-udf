@@ -232,6 +232,29 @@ try:
     print("✅ UDF ODM registrada")
 except Exception as e:
     print(f"❌ ERRO ao registrar UDF: {e}")
+
+# =============================================================================
+# 📊 CRIAR ACCUMULATOR PARA MÉTRICAS ILMT
+# =============================================================================
+
+print("\n📊 Criando Spark Accumulator para métricas ILMT...")
+try:
+    # Criar accumulator
+    AccumulatorClass = jvm.br.com.itau.odm.embarcado.S3MetricsAccumulator
+    metrics_accumulator = AccumulatorClass()
+    
+    # Registrar no Spark
+    jsc.sc().register(metrics_accumulator, "ODM_ILMT_Metrics")
+    
+    # Fazer broadcast para todos os executors
+    accumulator_broadcast = jsc.broadcast(metrics_accumulator)
+    
+    print("✅ Accumulator criado e registrado")
+    print(f"   Nome: ODM_ILMT_Metrics")
+    print(f"   Broadcast ID: {accumulator_broadcast.id}")
+except Exception as e:
+    print(f"❌ ERRO ao criar accumulator: {e}")
+    raise
     raise
 
 # =============================================================================
@@ -323,6 +346,61 @@ rdd_input    = df_input.rdd.map(create_odm_input)
 df_with_input = spark.createDataFrame(rdd_input, ["record_id", "odm_input"])
 df_with_input.persist()
 input_count = df_with_input.count()
+
+# =============================================================================
+# 🎯 CRIAR UDF WRAPPER COM TRACKING DE MÉTRICAS
+# =============================================================================
+
+print("\n📊 Criando UDF wrapper com tracking de métricas...")
+
+# Criar UDF Python que chama a UDF Java e registra métricas no accumulator
+def execute_odm_with_metrics(odm_input):
+    """
+    Wrapper que executa a UDF Java e registra métricas no accumulator.
+    """
+    import time
+    start_time = time.time()
+    
+    try:
+        # Chamar UDF Java
+        result_json = spark.sql(f"SELECT execute_odm('{odm_input}') as result").collect()[0].result
+        
+        # Calcular duração
+        duration_ms = int((time.time() - start_time) * 1000)
+        
+        # Extrair informações do resultado
+        result_dict = json.loads(result_json)
+        has_error = "error" in result_dict
+        rules_fired = result_dict.get("__RulesFired__", 0)
+        
+        # Registrar no accumulator
+        acc = accumulator_broadcast.value
+        acc.recordExecution(
+            RULESET_PATH,      # ruleset path
+            duration_ms,        # duration
+            rules_fired,        # rules fired
+            not has_error       # success
+        )
+        
+        return result_json
+        
+    except Exception as e:
+        # Em caso de erro, registrar como falha
+        duration_ms = int((time.time() - start_time) * 1000)
+        acc = accumulator_broadcast.value
+        acc.recordExecution(
+            RULESET_PATH,
+            duration_ms,
+            0,
+            False  # error
+        )
+        # Re-lançar exceção
+        raise e
+
+# Registrar UDF Python
+spark.udf.register("execute_odm_tracked", execute_odm_with_metrics, StringType())
+
+print("✅ UDF wrapper criada: execute_odm_tracked")
 print(f"\n✅ Input preparado: {input_count:,} registros em {time.time()-t0:.1f}s")
 
 # =============================================================================
@@ -343,7 +421,7 @@ start_time_ms = int(start_time * 1000)
 
 df_result = (
     df_with_input
-    .withColumn("odm_output",           expr("execute_odm(odm_input)"))
+    .withColumn("odm_output",           expr("execute_odm_tracked(odm_input)"))
     .withColumn("processing_timestamp", current_timestamp())
     .withColumn("job_name",             lit(args['JOB_NAME']))
 )
@@ -412,34 +490,52 @@ except Exception as e:
     print(f"     ⚠️ Não foi possível analisar tempos: {e}")
 
 # =============================================================================
-# 📤 MÉTRICAS ILMT PARA S3 (AUTOMÁTICO)
+# 📤 COLETAR E ENVIAR MÉTRICAS ILMT AGREGADAS
 # =============================================================================
-#
-# As métricas ILMT são enviadas AUTOMATICAMENTE pelo S3Metrics no shutdown da JVM.
-# Não é necessário chamar nenhum método do Python.
-#
-# Configuração (já feita nas linhas 180-182):
-#   jvm.System.setProperty("S3_METRICS_BUCKET", S3_METRICS_BUCKET)
-#   jvm.System.setProperty("S3_METRICS_PREFIX", S3_METRICS_PREFIX)
-#   jvm.System.setProperty("S3_METRICS_REGION", S3_METRICS_REGION)
-#
-# O S3Metrics acumula automaticamente:
-#   - Total de execuções
-#   - Sucessos vs erros
-#   - Tempo de execução
-#   - Regras disparadas
-#   - Ruleset path
-#
-# No shutdown, envia para S3:
-#   s3://{bucket}/{prefix}/yyyy/MM/dd/HH/ilmt-report-{timestamp}.xml
-#   s3://{bucket}/{prefix}/yyyy/MM/dd/HH/custom-report-{timestamp}.xml
 
 print("\n" + "=" * 80)
-print("📤 MÉTRICAS ILMT CONFIGURADAS (envio automático no shutdown)")
+print("📤 COLETANDO MÉTRICAS ILMT AGREGADAS")
 print("=" * 80)
-print(f"  Bucket: s3://{S3_METRICS_BUCKET}/{S3_METRICS_PREFIX}")
-print(f"  Decisões processadas: {total_processed:,}")
-print(f"  ✅ Métricas serão enviadas automaticamente ao finalizar o job")
+
+try:
+    # Coletar métricas agregadas de todos os executors
+    final_metrics = metrics_accumulator.value()
+    
+    print(f"\n  📊 Métricas Agregadas:")
+    print(f"     Total execuções:  {final_metrics.totalCount:,}")
+    print(f"     Sucesso:          {final_metrics.okCount:,}")
+    print(f"     Erros:            {final_metrics.errorCount:,}")
+    print(f"     Duração total:    {final_metrics.totalDurationMs:,}ms")
+    print(f"     Regras disparadas: {final_metrics.totalRulesFired:,}")
+    print(f"     Ruleset:          {final_metrics.rulesetPath}")
+    
+    if final_metrics.totalCount > 0:
+        avg_duration = final_metrics.totalDurationMs / final_metrics.totalCount
+        print(f"     Tempo médio:      {avg_duration:.2f}ms")
+    
+    # Enviar para S3 usando S3MetricsAggregator
+    print(f"\n  📤 Enviando para S3: s3://{S3_METRICS_BUCKET}/{S3_METRICS_PREFIX}")
+    
+    S3MetricsAggregator = jvm.br.com.itau.odm.embarcado.S3MetricsAggregator
+    S3MetricsAggregator.sendAggregatedMetrics(
+        S3_METRICS_BUCKET,
+        S3_METRICS_PREFIX,
+        S3_METRICS_REGION,
+        final_metrics.totalCount,
+        final_metrics.okCount,
+        final_metrics.errorCount,
+        final_metrics.totalDurationMs,
+        final_metrics.totalRulesFired,
+        final_metrics.rulesetPath,
+        final_metrics.startTimestampMs,
+        final_metrics.endTimestampMs
+    )
+    
+    print(f"  ✅ Métricas ILMT enviadas com sucesso!")
+    
+except Exception as e:
+    print(f"  ⚠️  AVISO: Erro ao enviar métricas ILMT: {e}")
+    print(f"     O job continuará normalmente")
 
 # =============================================================================
 # 💾 SALVAR RESULTADOS NO S3
