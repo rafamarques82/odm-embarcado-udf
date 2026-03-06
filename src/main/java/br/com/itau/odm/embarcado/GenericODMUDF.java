@@ -64,7 +64,12 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
                 throw new IllegalArgumentException("Configuração '__config__' não encontrada");
             }
             
+            // DEBUG: Imprimir config completo
+            System.out.println("[GenericODMUDF-DEBUG] Config recebido: " + config);
+            System.out.println("[GenericODMUDF-DEBUG] Config keys: " + config.keySet());
+            
             String rulesetPath = (String) config.get("ruleset_path");
+            System.out.println("[GenericODMUDF-DEBUG] rulesetPath extraído: '" + rulesetPath + "'");
             String inputClassName = (String) config.get("input_class");
             String inputParamName = (String) config.get("input_param_name");
             List<String> outputParamNames = (List<String>) config.get("output_param_names");
