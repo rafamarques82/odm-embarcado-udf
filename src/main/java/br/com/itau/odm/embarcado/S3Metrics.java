@@ -277,23 +277,63 @@ final class S3Metrics {
     private static Properties loadS3Properties() throws Exception {
         Properties p = new Properties();
 
+        // 1. Tentar carregar de arquivo (odm-s3.properties)
         String explicitPath = System.getProperty("odm.s3.props");
         if (explicitPath == null || explicitPath.isBlank()) {
             explicitPath = System.getenv("ODM_S3_PROPS");
         }
 
+        boolean loadedFromFile = false;
         if (explicitPath != null && !explicitPath.isBlank() && Files.exists(Paths.get(explicitPath))) {
-            try (InputStream in = Files.newInputStream(Paths.get(explicitPath))) { p.load(in); }
+            try (InputStream in = Files.newInputStream(Paths.get(explicitPath))) {
+                p.load(in);
+                loadedFromFile = true;
+            }
         } else if (Files.exists(Paths.get("odm-s3.properties"))) {
-            try (InputStream in = Files.newInputStream(Paths.get("odm-s3.properties"))) { p.load(in); }
+            try (InputStream in = Files.newInputStream(Paths.get("odm-s3.properties"))) {
+                p.load(in);
+                loadedFromFile = true;
+            }
         } else {
             try (InputStream in = S3Metrics.class.getClassLoader().getResourceAsStream("odm-s3.properties")) {
-                if (in != null) p.load(in);
+                if (in != null) {
+                    p.load(in);
+                    loadedFromFile = true;
+                }
             }
         }
 
+        // 2. Sobrescrever com System Properties (se existirem) - compatibilidade com script Glue
+        String sysBucket = System.getProperty("S3_METRICS_BUCKET");
+        String sysPrefix = System.getProperty("S3_METRICS_PREFIX");
+        String sysRegion = System.getProperty("S3_METRICS_REGION");
+        
+        if (sysBucket != null && !sysBucket.isBlank()) {
+            p.setProperty("bucket", sysBucket);
+            loadedFromFile = true; // considera como configurado
+        }
+        if (sysPrefix != null && !sysPrefix.isBlank()) {
+            p.setProperty("prefix", sysPrefix);
+        }
+        if (sysRegion != null && !sysRegion.isBlank()) {
+            p.setProperty("region", sysRegion);
+        }
+
+        // 3. Validar configuração mínima
         if (p.getProperty("bucket") == null || p.getProperty("bucket").isBlank()) {
-            throw new IllegalArgumentException("Propriedade 'bucket' ausente no arquivo odm-s3.properties");
+            throw new IllegalArgumentException(
+                "Propriedade 'bucket' ausente. Configure via:\n" +
+                "  - Arquivo odm-s3.properties, ou\n" +
+                "  - System Property: -DS3_METRICS_BUCKET=nome-do-bucket"
+            );
+        }
+
+        // 4. Defaults
+        if (p.getProperty("prefix") == null || p.getProperty("prefix").isBlank()) {
+            p.setProperty("prefix", "odm-metrics");
+        }
+        if (p.getProperty("region") == null || p.getProperty("region").isBlank()) {
+            p.setProperty("region", "us-east-1");
         }
 
         return p;
