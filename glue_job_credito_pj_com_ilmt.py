@@ -316,6 +316,11 @@ print(f"   Parâm.:   {config_odm['input_param_name']}")
 # Serializar config uma vez para usar na closure
 CONFIG_JSON_STR = json.dumps(config_odm)
 
+# DEBUG: Imprimir config que será enviado
+print(f"\n🔍 DEBUG - Config JSON que será enviado:")
+print(CONFIG_JSON_STR)
+print(f"\n🔍 DEBUG - Verificando chave ruleset_path: {config_odm.get('ruleset_path')}")
+
 def create_odm_input(row):
     """Cria payload ODM a partir de uma linha do DataFrame."""
     row_dict  = row.asDict(recursive=True)
@@ -327,6 +332,11 @@ def create_odm_input(row):
     # Usar variável global CONFIG_JSON_STR que será capturada pela closure
     payload = '{"__config__":' + CONFIG_JSON_STR + ',"data":' + json.dumps(cliente_data) + '}'
     return (record_id, payload)
+
+# DEBUG: Testar criação de um payload de exemplo
+print(f"\n🔍 DEBUG - Testando criação de payload...")
+test_payload = '{"__config__":' + CONFIG_JSON_STR + ',"data":{}}'
+print(f"Payload de teste: {test_payload[:200]}...")
 
 t0 = time.time()
 rdd_input    = df_input.rdd.map(create_odm_input)
