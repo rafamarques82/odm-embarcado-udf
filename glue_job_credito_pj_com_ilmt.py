@@ -237,29 +237,9 @@ except Exception as e:
 # 📊 CRIAR ACCUMULATOR PARA MÉTRICAS ILMT
 # =============================================================================
 
-print("\n📊 Criando Accumulators para métricas ILMT...")
-try:
-    # Usar LongAccumulators nativos do Spark (mais simples e confiável)
-    acc_total = spark.sparkContext.accumulator(0)
-    acc_ok = spark.sparkContext.accumulator(0)
-    acc_error = spark.sparkContext.accumulator(0)
-    acc_duration = spark.sparkContext.accumulator(0)
-    acc_rules = spark.sparkContext.accumulator(0)
-    
-    # Broadcast do ruleset path
-    ruleset_broadcast = spark.sparkContext.broadcast(RULESET_PATH)
-    
-    print("✅ Accumulators criados:")
-    print(f"   - Total execuções")
-    print(f"   - Sucessos")
-    print(f"   - Erros")
-    print(f"   - Duração total")
-    print(f"   - Regras disparadas")
-except Exception as e:
-    print(f"❌ ERRO ao criar accumulators: {e}")
-    import traceback
-    traceback.print_exc()
-    raise
+# Nota: Métricas ILMT são coletadas automaticamente pelo S3Metrics no JAR
+# Não é necessário criar accumulators Python
+print("\n📊 Métricas ILMT serão coletadas automaticamente pelo S3Metrics (JAR)")
 
 # =============================================================================
 # 📊 LER DADOS DE ENTRADA
@@ -333,16 +313,18 @@ print(f"   Parâm.:   {config_odm['input_param_name']}")
 # 🔄 PREPARAR INPUT PARA ODM
 # =============================================================================
 
-config_odm_json = json.dumps(config_odm)
+# Copiar config para variável local para evitar captura de escopo global
+config_json_str = json.dumps(config_odm)
 
-def create_odm_input(row):
+def create_odm_input(row, config_str=config_json_str):
+    """Cria payload ODM a partir de uma linha do DataFrame."""
     row_dict  = row.asDict(recursive=True)
     record_id = row_dict.pop('record_id')
     decision_id  = row_dict.get('DecisionID_', None)
     cliente_data = row_dict.get('Cliente', {})
     if decision_id:
         cliente_data['DecisionID_'] = decision_id
-    payload = '{"__config__":' + config_odm_json + ',"data":' + json.dumps(cliente_data) + '}'
+    payload = '{"__config__":' + config_str + ',"data":' + json.dumps(cliente_data) + '}'
     return (record_id, payload)
 
 t0 = time.time()
@@ -351,56 +333,6 @@ df_with_input = spark.createDataFrame(rdd_input, ["record_id", "odm_input"])
 df_with_input.persist()
 input_count = df_with_input.count()
 
-# =============================================================================
-# 🎯 CRIAR UDF WRAPPER COM TRACKING DE MÉTRICAS
-# =============================================================================
-
-print("\n📊 Criando UDF wrapper com tracking de métricas...")
-
-# Criar UDF Python que chama a UDF Java e registra métricas nos accumulators
-def execute_odm_with_metrics(odm_input):
-    """
-    Wrapper que executa a UDF Java e registra métricas nos accumulators.
-    """
-    import time
-    start_time = time.time()
-    
-    try:
-        # Chamar UDF Java
-        result_json = spark.sql(f"SELECT execute_odm('{odm_input}') as result").collect()[0].result
-        
-        # Calcular duração
-        duration_ms = int((time.time() - start_time) * 1000)
-        
-        # Extrair informações do resultado
-        result_dict = json.loads(result_json)
-        has_error = "error" in result_dict
-        rules_fired = result_dict.get("__RulesFired__", 0)
-        
-        # Registrar nos accumulators
-        acc_total.add(1)
-        if has_error:
-            acc_error.add(1)
-        else:
-            acc_ok.add(1)
-        acc_duration.add(duration_ms)
-        acc_rules.add(rules_fired)
-        
-        return result_json
-        
-    except Exception as e:
-        # Em caso de erro, registrar como falha
-        duration_ms = int((time.time() - start_time) * 1000)
-        acc_total.add(1)
-        acc_error.add(1)
-        acc_duration.add(duration_ms)
-        # Re-lançar exceção
-        raise e
-
-# Registrar UDF Python
-spark.udf.register("execute_odm_tracked", execute_odm_with_metrics, StringType())
-
-print("✅ UDF wrapper criada: execute_odm_tracked")
 print(f"\n✅ Input preparado: {input_count:,} registros em {time.time()-t0:.1f}s")
 
 # =============================================================================
@@ -421,7 +353,7 @@ start_time_ms = int(start_time * 1000)
 
 df_result = (
     df_with_input
-    .withColumn("odm_output",           expr("execute_odm_tracked(odm_input)"))
+    .withColumn("odm_output",           expr("execute_odm(odm_input)"))
     .withColumn("processing_timestamp", current_timestamp())
     .withColumn("job_name",             lit(args['JOB_NAME']))
 )
@@ -490,59 +422,16 @@ except Exception as e:
     print(f"     ⚠️ Não foi possível analisar tempos: {e}")
 
 # =============================================================================
-# 📤 COLETAR E ENVIAR MÉTRICAS ILMT AGREGADAS
+# 📤 MÉTRICAS ILMT
 # =============================================================================
 
 print("\n" + "=" * 80)
-print("📤 COLETANDO MÉTRICAS ILMT AGREGADAS")
+print("📤 MÉTRICAS ILMT")
 print("=" * 80)
-
-try:
-    # Coletar valores dos accumulators
-    total_count = acc_total.value
-    ok_count = acc_ok.value
-    error_count = acc_error.value
-    total_duration = acc_duration.value
-    total_rules = acc_rules.value
-    ruleset_path = ruleset_broadcast.value
-    
-    print(f"\n  📊 Métricas Agregadas:")
-    print(f"     Total execuções:   {total_count:,}")
-    print(f"     Sucesso:           {ok_count:,}")
-    print(f"     Erros:             {error_count:,}")
-    print(f"     Duração total:     {total_duration:,}ms")
-    print(f"     Regras disparadas: {total_rules:,}")
-    print(f"     Ruleset:           {ruleset_path}")
-    
-    if total_count > 0:
-        avg_duration = total_duration / total_count
-        print(f"     Tempo médio:       {avg_duration:.2f}ms")
-    
-    # Enviar para S3 usando S3MetricsAggregator
-    print(f"\n  📤 Enviando para S3: s3://{S3_METRICS_BUCKET}/{S3_METRICS_PREFIX}")
-    
-    S3MetricsAggregator = jvm.br.com.itau.odm.embarcado.S3MetricsAggregator
-    S3MetricsAggregator.sendAggregatedMetrics(
-        S3_METRICS_BUCKET,
-        S3_METRICS_PREFIX,
-        S3_METRICS_REGION,
-        total_count,
-        ok_count,
-        error_count,
-        total_duration,
-        total_rules,
-        ruleset_path,
-        start_time_ms,
-        end_time_ms
-    )
-    
-    print(f"  ✅ Métricas ILMT enviadas com sucesso!")
-    
-except Exception as e:
-    print(f"  ⚠️  AVISO: Erro ao enviar métricas ILMT: {e}")
-    print(f"     O job continuará normalmente")
-    import traceback
-    traceback.print_exc()
+print("  ℹ️  Métricas ILMT são coletadas automaticamente pelo S3Metrics (JAR)")
+print(f"  📍 Bucket: s3://{S3_METRICS_BUCKET}/{S3_METRICS_PREFIX}")
+print("  ⚠️  Nota: Múltiplos arquivos XML serão gerados (um por flush periódico)")
+print("  💡 Use um script agregador para somar métricas de múltiplos XMLs")
 
 # =============================================================================
 # 💾 SALVAR RESULTADOS NO S3
