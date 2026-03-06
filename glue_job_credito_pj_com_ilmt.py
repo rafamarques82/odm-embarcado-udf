@@ -239,22 +239,24 @@ except Exception as e:
 
 print("\n📊 Criando Spark Accumulator para métricas ILMT...")
 try:
-    # Criar accumulator
-    AccumulatorClass = jvm.br.com.itau.odm.embarcado.S3MetricsAccumulator
+    # Criar accumulator usando gateway do py4j
+    gateway = spark.sparkContext._gateway
+    AccumulatorClass = gateway.jvm.br.com.itau.odm.embarcado.S3MetricsAccumulator
     metrics_accumulator = AccumulatorClass()
     
     # Registrar no Spark
-    jsc.sc().register(metrics_accumulator, "ODM_ILMT_Metrics")
+    spark.sparkContext._jsc.sc().register(metrics_accumulator, "ODM_ILMT_Metrics")
     
     # Fazer broadcast para todos os executors
-    accumulator_broadcast = jsc.broadcast(metrics_accumulator)
+    accumulator_broadcast = spark.sparkContext.broadcast(metrics_accumulator)
     
     print("✅ Accumulator criado e registrado")
     print(f"   Nome: ODM_ILMT_Metrics")
     print(f"   Broadcast ID: {accumulator_broadcast.id}")
 except Exception as e:
     print(f"❌ ERRO ao criar accumulator: {e}")
-    raise
+    import traceback
+    traceback.print_exc()
     raise
 
 # =============================================================================
