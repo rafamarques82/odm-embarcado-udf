@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>br.com.itau.odm</groupId>
+    <artifactId>embarcado</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>ODM Embarcado - Generic UDF</name>
+    <description>Generic ODM UDF with Kafka integration for Spark</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+        <spark.version>3.3.0</spark.version>
+        <kafka.version>3.3.1</kafka.version>
+        <gson.version>2.10.1</gson.version>
+        <aws.sdk.version>1.12.529</aws.sdk.version>
+    </properties>
+
+    <dependencies>
+        <!-- Spark Core (provided - já existe no cluster) -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-core_2.12</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Spark SQL (provided - já existe no cluster) -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_2.12</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Kafka Clients -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka.version}</version>
+        </dependency>
+
+        <!-- Gson para JSON -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>${gson.version}</version>
+        </dependency>
+
+        <!-- SLF4J API (provided - já existe no cluster) -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.36</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- ODM JRules Engine -->
+        <dependency>
+            <groupId>com.ibm.rules</groupId>
+            <artifactId>jrules-engine</artifactId>
+            <version>8.12.0</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/jrules-engine.jar</systemPath>
+        </dependency>
+
+        <!-- ODM JRules RES Execution -->
+        <dependency>
+            <groupId>com.ibm.rules</groupId>
+            <artifactId>jrules-res-execution</artifactId>
+            <version>8.12.0</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/jrules-res-execution.jar</systemPath>
+        </dependency>
+
+        <!-- IBM License Metric Logger (ILMT) -->
+        <dependency>
+            <groupId>com.ibm.license</groupId>
+            <artifactId>license-metric-logger</artifactId>
+            <version>2.1.2</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/license_metric_logger_2.1.2.202009181115.jar</systemPath>
+        </dependency>
+
+        <!-- JCA API (Java Connector Architecture) - Requerido pelo ODM -->
+        <dependency>
+            <groupId>javax.resource</groupId>
+            <artifactId>javax.resource-api</artifactId>
+            <version>1.7.1</version>
+        </dependency>
+        
+        <!-- JCA Connector API - Inclui javax.resource.cci -->
+        <dependency>
+            <groupId>javax.resource</groupId>
+            <artifactId>connector-api</artifactId>
+            <version>1.5</version>
+        </dependency>
+
+        <!-- AWS SDK S3 -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-s3</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+
+        <!-- AWS SDK Core -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-core</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Maven Compiler Plugin -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <source>1.8</source>
+                    <target>1.8</target>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+
+            <!-- Maven AntRun Plugin - Descompacta JARs do ODM -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>unpack-odm-jars</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <echo message="Descompactando JARs do ODM..."/>
+                                <unzip src="${project.basedir}/lib/jrules-engine.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <unzip src="${project.basedir}/lib/jrules-res-execution.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <unzip src="${project.basedir}/lib/license_metric_logger_2.1.2.202009181115.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <echo message="JARs do ODM descompactados com sucesso!"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Maven Shade Plugin - Cria Fat JAR -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <finalName>odm-embarcado-udf-${project.version}</finalName>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Main-Class>br.com.itau.odm.embarcado.GenericODMUDF</Main-Class>
+                                        <Built-By>Itau</Built-By>
+                                        <Build-Time>${maven.build.timestamp}</Build-Time>
+                                    </manifestEntries>
+                                </transformer>
+                                <!-- Merge service files -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <!-- Incluir dependências, exceto as provided -->
+                            <artifactSet>
+                                <includes>
+                                    <include>org.apache.kafka:kafka-clients</include>
+                                    <include>com.google.code.gson:gson</include>
+                                    <include>javax.resource:javax.resource-api</include>
+                                    <include>javax.resource:connector-api</include>
+                                    <include>com.amazonaws:aws-java-sdk-s3</include>
+                                    <include>com.amazonaws:aws-java-sdk-core</include>
+                                    <include>com.amazonaws:*</include>
+                                </includes>
+                            </artifactSet>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+
+<!-- Made with Bob -->

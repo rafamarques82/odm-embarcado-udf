@@ -1,0 +1,3 @@
+# Para reconstruir o JAR:
+# cat odm-embarcado-udf-1.0.0-split.z* > odm-embarcado-udf-1.0.0-split-combined.zip
+# unzip odm-embarcado-udf-1.0.0-split-combined.zip
