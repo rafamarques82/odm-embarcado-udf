@@ -202,7 +202,7 @@ final class S3Metrics {
 
     /* ===================== Internals ===================== */
 
-    static boolean isReady() { return S3_READY; }
+    public static boolean isReady() { return S3_READY; }
 
     static void initIfNeeded() {
         if (INIT.get()) return;
