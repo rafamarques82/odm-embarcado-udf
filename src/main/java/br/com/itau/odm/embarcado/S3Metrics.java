@@ -126,6 +126,79 @@ final class S3Metrics {
 
     /** Fecha: envia o RESUMO (XML ILMT + XML customizado) para S3 */
     static void close() { safeFlushAndClose(); }
+    
+    /** Força o flush imediato do resumo (útil para debug) */
+    public static void forceFlush() {
+        System.out.println("[ODM-S3] forceFlush() chamado - Total execuções: " + TOTAL_COUNT.get());
+        flushSummaryOnce();
+    }
+    
+    /** Retorna o total de execuções registradas (para debug) */
+    public static long getTotalCount() {
+        return TOTAL_COUNT.get();
+    }
+    
+    /**
+     * Gera relatório ILMT com o count fornecido (chamado pelo Python após execução)
+     * @param totalDecisions Total de decisões executadas
+     * @return Caminho do arquivo ILMT gerado
+     */
+    public static String generateIlmtReport(long totalDecisions) {
+        try {
+            System.out.println("[ODM-S3] generateIlmtReport() chamado com " + totalDecisions + " decisões");
+            
+            long startMs = START_TS_MS.get();
+            long endMs = END_TS_MS.get();
+            
+            if (startMs == 0) startMs = System.currentTimeMillis();
+            if (endMs == 0) endMs = System.currentTimeMillis();
+            
+            // Gerar relatório ILMT
+            String ilmtXml = buildIlmtXmlWithDecisionMetering(totalDecisions, startMs, endMs);
+            
+            // Salvar no S3
+            sendToS3(ilmtXml, "ilmt-python", endMs);
+            
+            System.out.println("[ODM-S3] Relatório ILMT gerado com sucesso: " + totalDecisions + " decisões");
+            return "OK";
+            
+        } catch (Exception e) {
+            System.err.println("[ODM-S3] Erro ao gerar relatório ILMT: " + e.getMessage());
+            e.printStackTrace();
+            return "ERROR: " + e.getMessage();
+        }
+    }
+    
+    /** Retorna um JSON com todas as métricas acumuladas */
+    public static String getMetricsAsJson() {
+        long totalCount = TOTAL_COUNT.get();
+        long okCount = OK_COUNT.get();
+        long errorCount = ERROR_COUNT.get();
+        long totalDuration = TOTAL_DURATION_MS.get();
+        long totalRules = TOTAL_RULES_FIRED.get();
+        long startMs = START_TS_MS.get();
+        long endMs = END_TS_MS.get();
+        
+        long avgDuration = (totalCount > 0) ? (totalDuration / totalCount) : 0;
+        long avgRules = (totalCount > 0) ? (totalRules / totalCount) : 0;
+        
+        StringBuilder json = new StringBuilder();
+        json.append("{\n");
+        json.append("  \"totalExecutions\": ").append(totalCount).append(",\n");
+        json.append("  \"successCount\": ").append(okCount).append(",\n");
+        json.append("  \"errorCount\": ").append(errorCount).append(",\n");
+        json.append("  \"totalDurationMs\": ").append(totalDuration).append(",\n");
+        json.append("  \"avgDurationMs\": ").append(avgDuration).append(",\n");
+        json.append("  \"totalRulesFired\": ").append(totalRules).append(",\n");
+        json.append("  \"avgRulesFired\": ").append(avgRules).append(",\n");
+        json.append("  \"startTimestampMs\": ").append(startMs).append(",\n");
+        json.append("  \"endTimestampMs\": ").append(endMs).append(",\n");
+        json.append("  \"rulesetPath\": \"").append(RULESET_PATH).append("\",\n");
+        json.append("  \"s3Ready\": ").append(S3_READY).append("\n");
+        json.append("}");
+        
+        return json.toString();
+    }
 
     /* ===================== Internals ===================== */
 
