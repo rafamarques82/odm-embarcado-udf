@@ -506,15 +506,82 @@ else:
 df_result.unpersist()
 
 # =============================================================================
-# 📤 FLUSH FINAL (S3 Metrics)
+# 📊 ENVIAR RELATÓRIO ILMT PARA S3
 # =============================================================================
+print("\n" + "=" * 80)
+print("📊 GERANDO E ENVIANDO RELATÓRIO ILMT PARA S3")
+print("=" * 80)
 
-print("\n📤 Finalizando métricas...")
-try:
-    jvm.br.com.itau.odm.embarcado.GenericODMUDF.shutdown()
-    print("  ✅ Métricas enviadas")
-except Exception as e:
-    print(f"  ⚠️ Aviso: {e}")
+# Configuração S3 para ILMT
+S3_ILMT_BUCKET = S3_OUTPUT_BUCKET
+S3_ILMT_PREFIX = "embarcado/ilmt-reports/"
+S3_ILMT_REGION = S3_REGION
+
+if total_processed > 0:
+    try:
+        # Calcular timestamps de início e fim do job
+        job_start_ms = int(start_time * 1000)
+        job_end_ms   = int((start_time + elapsed_time) * 1000)
+        
+        print(f"  📋 Informações do Relatório:")
+        print(f"     Ruleset:        {RULESET_PATH}")
+        print(f"     Total Decisões: {total_processed:,}")
+        print(f"     Início:         {datetime.fromtimestamp(start_time).isoformat()}")
+        print(f"     Fim:            {datetime.fromtimestamp(start_time + elapsed_time).isoformat()}")
+        print(f"     Duração:        {elapsed_time:.2f}s")
+        
+        # Chamar método Java S3MetricsHelper.sendIlmtMetrics
+        print(f"\n  📤 Enviando para S3: s3://{S3_ILMT_BUCKET}/{S3_ILMT_PREFIX}")
+        
+        success = jvm.br.com.itau.odm.embarcado.S3MetricsHelper.sendIlmtMetrics(
+            S3_ILMT_BUCKET,      # bucketName
+            S3_ILMT_PREFIX,      # prefix
+            S3_ILMT_REGION,      # region
+            RULESET_PATH,        # rulesetPath
+            total_processed,     # totalDecisions (long)
+            job_start_ms,        # startTimeMs (long)
+            job_end_ms           # endTimeMs (long)
+        )
+        
+        if success:
+            print(f"  ✅ Relatórios ILMT enviados com sucesso!")
+            print(f"     📁 Bucket:  s3://{S3_ILMT_BUCKET}")
+            print(f"     📂 Prefix:  {S3_ILMT_PREFIX}")
+            print(f"     📄 Arquivos:")
+            
+            # Calcular path dos arquivos gerados
+            partition_format = datetime.fromtimestamp(start_time)
+            partition = f"{partition_format.year:04d}/{partition_format.month:02d}/{partition_format.day:02d}/{partition_format.hour:02d}"
+            
+            ilmt_file = f"{S3_ILMT_PREFIX}{partition}/ilmt-report-{job_start_ms}.xml"
+            custom_file = f"{S3_ILMT_PREFIX}{partition}/custom-report-{job_start_ms}.xml"
+            
+            print(f"        • ILMT Report:   {ilmt_file}")
+            print(f"        • Custom Report: {custom_file}")
+            
+            # Estatísticas adicionais
+            million_decisions = total_processed / 1_000_000.0
+            thousand_decisions = total_processed / 1_000.0
+            
+            print(f"\n  📊 Métricas ILMT:")
+            if million_decisions >= 1.0:
+                print(f"     Métrica:  MILLION_MONTHLY_DECISIONS")
+                print(f"     Valor:    {million_decisions:.3f} milhões")
+            else:
+                print(f"     Métrica:  THOUSAND_MONTHLY_ARTIFACTS")
+                print(f"     Valor:    {thousand_decisions:.3f} mil")
+            
+        else:
+            print(f"  ⚠️  Falha ao enviar relatórios ILMT")
+            print(f"     Verifique as credenciais AWS e permissões do bucket")
+            
+    except Exception as e:
+        print(f"  ❌ ERRO ao gerar/enviar relatório ILMT: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"     Continuando execução do job...")
+else:
+    print("  ℹ️  Nenhuma decisão processada - relatório ILMT não gerado")
 
 # =============================================================================
 # ✅ FINALIZAR JOB
