@@ -3,21 +3,50 @@ package br.com.itau.odm.embarcado;
 /**
  * ODMMetricsManager — envia relatórios ILMT + custom para S3.
  *
- * Uso no driver (1 linha):
- *   ODMMetricsManager.flush(total, ok, errors, durationMs, rulesetPath, startMs, endMs);
+ * Uso no driver (2 passos):
  *
- * Bucket, prefix e region são lidos automaticamente das variáveis de ambiente:
- *   S3_METRICS_BUCKET  (obrigatório)
- *   S3_METRICS_PREFIX  (opcional, default: "odm-metrics")
- *   S3_METRICS_REGION  (opcional, default: "us-east-1")
+ *   1. No início do job (valida e aborta se não configurado):
+ *      ODMMetricsManager.init(bucket, prefix, region);
+ *
+ *   2. No fim do job (envia os relatórios):
+ *      ODMMetricsManager.flush(total, ok, errors, durationMs, ruleset, startMs, endMs);
  */
 public final class ODMMetricsManager {
+
+    private static volatile String s3Bucket = null;
+    private static volatile String s3Prefix = "odm-metrics";
+    private static volatile String s3Region  = "us-east-1";
 
     private ODMMetricsManager() {}
 
     /**
-     * Envia relatórios ILMT + custom para S3.
-     * Lê bucket/prefix/region das variáveis de ambiente S3_METRICS_*.
+     * Valida e armazena a configuração S3.
+     * Deve ser chamado NO INÍCIO do job — aborta imediatamente se bucket inválido.
+     *
+     * @param bucket  Bucket S3 de destino (obrigatório)
+     * @param prefix  Prefixo/pasta no bucket (opcional, default: "odm-metrics")
+     * @param region  Região AWS (opcional, default: "us-east-1")
+     */
+    public static synchronized void init(String bucket, String prefix, String region) {
+        if (bucket == null || bucket.trim().isEmpty()) {
+            throw new IllegalArgumentException(
+                "[ODMMetricsManager] ERRO: 'bucket' é obrigatório.\n" +
+                "Configure o job parameter --S3_METRICS_BUCKET no Glue Job."
+            );
+        }
+        s3Bucket = bucket.trim();
+        s3Prefix = (prefix != null && !prefix.trim().isEmpty()) ? prefix.trim() : "odm-metrics";
+        s3Region = (region != null && !region.trim().isEmpty()) ? region.trim() : "us-east-1";
+
+        System.out.println("[ODMMetricsManager] Configurado.");
+        System.out.println("[ODMMetricsManager]   Bucket: " + s3Bucket);
+        System.out.println("[ODMMetricsManager]   Prefix: " + s3Prefix);
+        System.out.println("[ODMMetricsManager]   Region: " + s3Region);
+    }
+
+    /**
+     * Envia os relatórios ILMT + custom para S3.
+     * Requer que init() tenha sido chamado antes — lança IllegalStateException caso contrário.
      *
      * @param totalCount      Total de execuções ODM
      * @param okCount         Execuções sem erro
@@ -28,9 +57,6 @@ public final class ODMMetricsManager {
      * @param endMs           Epoch ms do fim
      */
     public static void flush(
-            String bucket,
-            String prefix,
-            String region,
             long totalCount,
             long okCount,
             long errorCount,
@@ -39,16 +65,12 @@ public final class ODMMetricsManager {
             long startMs,
             long endMs
     ) {
-        if (bucket == null || bucket.trim().isEmpty()) {
-            throw new IllegalArgumentException(
-                "[ODMMetricsManager] ERRO: 'bucket' é obrigatório.\n" +
-                "Configure o job parameter --S3_METRICS_BUCKET no Glue Job."
+        if (s3Bucket == null) {
+            throw new IllegalStateException(
+                "[ODMMetricsManager] ERRO: init() não foi chamado.\n" +
+                "Chame ODMMetricsManager.init(bucket, prefix, region) no início do job."
             );
         }
-
-        String s3Bucket = bucket.trim();
-        String s3Prefix = (prefix != null && !prefix.trim().isEmpty()) ? prefix.trim() : "odm-metrics";
-        String s3Region = (region != null && !region.trim().isEmpty()) ? region.trim() : "us-east-1";
 
         if (totalCount == 0) {
             System.out.println("[ODMMetricsManager] Nenhuma execução registrada — flush ignorado.");

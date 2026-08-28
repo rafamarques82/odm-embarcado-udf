@@ -327,31 +327,43 @@ class JarIntegrationTest {
         Class<?> mgr = jarLoader.loadClass(
                 "br.com.itau.odm.embarcado.ODMMetricsManager");
 
-        // Verificar assinatura correta: flush(String, String, String, long, long, long, long, String, long, long)
+        // Verificar init() e flush() públicos
+        Method init  = mgr.getMethod("init", String.class, String.class, String.class);
         Method flush = mgr.getMethod("flush",
-                String.class, String.class, String.class,
                 long.class, long.class, long.class, long.class,
                 String.class, long.class, long.class);
+        assertNotNull(init,  "ODMMetricsManager.init() deve ser público");
         assertNotNull(flush, "ODMMetricsManager.flush() deve ser público");
-        System.out.println("\n   ✅ ODMMetricsManager.flush() — presente");
+        System.out.println("\n   ✅ ODMMetricsManager.init()  — presente");
+        System.out.println("   ✅ ODMMetricsManager.flush() — presente");
 
-        // flush() com bucket null deve lançar IllegalArgumentException
+        // init() com bucket null deve lançar IllegalArgumentException
         java.lang.reflect.InvocationTargetException ex = assertThrows(
                 java.lang.reflect.InvocationTargetException.class,
-                () -> flush.invoke(null,
-                        null, "prefix", "us-east-1",
-                        100L, 99L, 1L, 5000L, "/test/1.0/r",
-                        System.currentTimeMillis() - 1000, System.currentTimeMillis()),
-                "flush() com bucket null deve lançar IllegalArgumentException");
-        assertInstanceOf(IllegalArgumentException.class, ex.getCause(),
-                "Causa deve ser IllegalArgumentException");
-        System.out.println("   ✅ flush(null bucket) — lança IllegalArgumentException");
+                () -> init.invoke(null, null, "prefix", "us-east-1"),
+                "init() com bucket null deve lançar IllegalArgumentException");
+        assertInstanceOf(IllegalArgumentException.class, ex.getCause());
+        System.out.println("   ✅ init(null bucket) — lança IllegalArgumentException");
 
-        // flush() com totalCount=0 não deve lançar exceção
+        // flush() sem init() deve lançar IllegalStateException
+        // (resetar s3Bucket via reflection para garantir estado limpo)
+        java.lang.reflect.Field s3BucketField = mgr.getDeclaredField("s3Bucket");
+        s3BucketField.setAccessible(true);
+        s3BucketField.set(null, null);
+        java.lang.reflect.InvocationTargetException ex2 = assertThrows(
+                java.lang.reflect.InvocationTargetException.class,
+                () -> flush.invoke(null, 100L, 99L, 1L, 5000L, "/test/1.0/r",
+                        System.currentTimeMillis() - 1000, System.currentTimeMillis()));
+        assertInstanceOf(IllegalStateException.class, ex2.getCause());
+        System.out.println("   ✅ flush() sem init() — lança IllegalStateException");
+
+        // init() + flush(totalCount=0) não deve lançar exceção
+        init.invoke(null, "meu-bucket", "odm-metrics", "sa-east-1");
         assertDoesNotThrow(() -> flush.invoke(null,
-                "meu-bucket", "odm-metrics", "sa-east-1",
                 0L, 0L, 0L, 0L, "/test/1.0/r",
                 System.currentTimeMillis(), System.currentTimeMillis()));
-        System.out.println("   ✅ flush(totalCount=0) — retorna sem tentar S3");
+        System.out.println("   ✅ init() + flush(totalCount=0) — retorna sem tentar S3");
+        // limpar estado
+        s3BucketField.set(null, null);
     }
 }

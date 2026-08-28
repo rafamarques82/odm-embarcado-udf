@@ -103,12 +103,13 @@ args = getResolvedOptions(sys.argv, [
 ])
 
 # =============================================================================
-# 📊 CONFIGURAR S3 METRICS
+# 📊 CONFIGURAR S3 METRICS — valida imediatamente, aborta se não configurado
 # =============================================================================
 
-os.environ['S3_METRICS_BUCKET'] = args['S3_METRICS_BUCKET']
-os.environ['S3_METRICS_PREFIX'] = args['S3_METRICS_PREFIX']
-os.environ['S3_METRICS_REGION'] = args['S3_METRICS_REGION']
+# getResolvedOptions já lança exceção se o parâmetro não existir.
+# Esta checagem adicional protege contra valor vazio.
+if not args.get('S3_METRICS_BUCKET'):
+    raise ValueError("Parâmetro --S3_METRICS_BUCKET é obrigatório.")
 
 print("=" * 80)
 print("📊 S3 METRICS CONFIGURADO")
@@ -174,6 +175,12 @@ spark = glueContext.spark_session
 
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
+
+# Inicializar ODMMetricsManager — valida bucket e armazena configs na JVM
+jvm = spark.sparkContext._jvm
+jvm.br.com.itau.odm.embarcado.ODMMetricsManager.init(
+    args['S3_METRICS_BUCKET'], args['S3_METRICS_PREFIX'], args['S3_METRICS_REGION']
+)
 
 # --- Aplicar tunings via SparkContext (runtime) ---
 jvm = spark.sparkContext._jvm
@@ -494,7 +501,6 @@ df_result.unpersist()
 # =============================================================================
 
 jvm.br.com.itau.odm.embarcado.ODMMetricsManager.flush(
-    args['S3_METRICS_BUCKET'], args['S3_METRICS_PREFIX'], args['S3_METRICS_REGION'],
     int(total_processed), int(success), int(errors),
     int(elapsed_time * 1000), RULESET_PATH,
     int(start_time * 1000), int(time.time() * 1000),
