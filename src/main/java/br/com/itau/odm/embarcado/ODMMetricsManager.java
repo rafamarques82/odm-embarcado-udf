@@ -2,10 +2,9 @@ package br.com.itau.odm.embarcado;
 
 import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.scheduler.SparkListener;
 import org.apache.spark.scheduler.SparkListenerApplicationEnd;
-
-import java.util.Arrays;
 
 /**
  * ODMMetricsManager — envia relatórios ILMT + custom para S3.
@@ -14,25 +13,29 @@ import java.util.Arrays;
  *   ODMMetricsManager.init(sc, bucket, prefix, region);
  *
  * O flush() é disparado automaticamente via SparkListener quando a aplicação termina.
- * A UDF verifica a System Property "odm.metrics.initialized" — lança IllegalStateException
- * se init() não foi chamado antes do processamento.
+ *
+ * Proteção contra ausência de init():
+ *   - No driver: init() valida bucket antes de qualquer processamento
+ *   - Nos executores: a UDF verifica o broadcast "odm.initialized" — garante que
+ *     qualquer executor (inclusive novos por elastic scaling) recebe a flag antes
+ *     de executar qualquer task, pois o Spark entrega broadcasts sob demanda.
  */
 public final class ODMMetricsManager {
 
-    /** System Property propagada para os executores — verifica que init() foi chamado. */
-    static final String PROP_INITIALIZED = "odm.metrics.initialized";
-
-    private static volatile String              s3Bucket    = null;
-    private static volatile String              s3Prefix    = "odm-metrics";
-    private static volatile String              s3Region    = "us-east-1";
+    private static volatile String               s3Bucket    = null;
+    private static volatile String               s3Prefix    = "odm-metrics";
+    private static volatile String               s3Region    = "us-east-1";
     private static volatile S3MetricsAccumulator accumulator = null;
-    private static volatile long                startMs     = 0L;
+    private static volatile long                 startMs     = 0L;
+
+    /** Broadcast que sinaliza aos executores que init() foi chamado. */
+    static volatile Broadcast<Boolean> initializedBroadcast = null;
 
     private ODMMetricsManager() {}
 
     /**
-     * Valida as configs S3, registra o Accumulator, propaga para os executores e
-     * registra um SparkListener que dispara o flush() automaticamente no fim do job.
+     * Valida as configs S3, registra o Accumulator, cria broadcast de inicialização
+     * e registra SparkListener para flush() automático no fim do job.
      *
      * Aborta imediatamente se bucket for inválido — antes de qualquer processamento.
      *
@@ -61,18 +64,18 @@ public final class ODMMetricsManager {
         accumulator = new S3MetricsAccumulator();
         sc.register(accumulator, "ODM-Metrics");
 
-        // Propagar referência do Accumulator e flag de inicialização para os executores
-        final S3MetricsAccumulator acc = accumulator;
-        int numPartitions = sc.defaultParallelism();
+        // Broadcast: entregue a QUALQUER executor (inclusive novos por elastic scaling)
+        // antes que ele execute qualquer task que referencie a variável.
         JavaSparkContext jsc = JavaSparkContext.fromSparkContext(sc);
-        jsc.parallelize(Arrays.asList(new Integer[numPartitions]), numPartitions)
-           .foreachPartition(it -> {
-               System.setProperty(PROP_INITIALIZED, "true");
-               // Guardar referência local no executor para uso pela UDF
-               GenericODMUDF.executorAccumulator = acc;
-           });
+        initializedBroadcast = jsc.broadcast(Boolean.TRUE);
 
-        // Registrar listener que faz flush() automaticamente quando a aplicação termina
+        // Propagar referência do Accumulator para os executores que já estão ativos
+        final S3MetricsAccumulator acc = accumulator;
+        jsc.parallelize(java.util.Arrays.asList(new Integer[sc.defaultParallelism()]),
+                        sc.defaultParallelism())
+           .foreachPartition(it -> GenericODMUDF.executorAccumulator = acc);
+
+        // SparkListener: flush() automático quando a aplicação termina
         sc.addSparkListener(new SparkListener() {
             @Override
             public void onApplicationEnd(SparkListenerApplicationEnd end) {

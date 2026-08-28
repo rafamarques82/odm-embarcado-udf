@@ -55,9 +55,13 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
     
     @Override
     public String call(String inputJson) throws Exception {
-        // Verificar se ODMMetricsManager.init() foi chamado — garante que o job
-        // não processa dados sem a configuração de métricas obrigatória.
-        if (System.getProperty(ODMMetricsManager.PROP_INITIALIZED) == null) {
+        // Verificar se ODMMetricsManager.init() foi chamado.
+        // Usa broadcast (funciona com elastic scaling) com fallback em System Property (testes unitários).
+        boolean initialized =
+            (ODMMetricsManager.initializedBroadcast != null &&
+             Boolean.TRUE.equals(ODMMetricsManager.initializedBroadcast.value()))
+            || "true".equals(System.getProperty("odm.metrics.initialized"));
+        if (!initialized) {
             throw new IllegalStateException(
                 "[GenericODMUDF] ERRO: ODMMetricsManager.init() não foi chamado.\n" +
                 "Chame ODMMetricsManager.init(sc, bucket, prefix, region) antes de executar a UDF."

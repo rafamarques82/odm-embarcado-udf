@@ -20,11 +20,12 @@ class ODMMetricsManagerTest {
 
     @AfterEach
     void resetState() throws Exception {
-        setField("s3Bucket",    null);
-        setField("s3Prefix",    "odm-metrics");
-        setField("s3Region",    "us-east-1");
-        setField("accumulator", null);
-        setField("startMs",     0L);
+        setField("s3Bucket",             null);
+        setField("s3Prefix",             "odm-metrics");
+        setField("s3Region",             "us-east-1");
+        setField("accumulator",          null);
+        setField("startMs",              0L);
+        setField("initializedBroadcast", null);
     }
 
     // -------------------------------------------------------------------------
