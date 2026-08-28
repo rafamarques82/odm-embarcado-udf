@@ -512,6 +512,7 @@ jvm.br.com.itau.odm.embarcado.ODMMetricsManager.flush(
 # ✅ FINALIZAR JOB
 # =============================================================================
 
+jvm.br.com.itau.odm.embarcado.ODMMetricsManager.flushRequired()
 job.commit()
 
 print("\n" + "=" * 80)

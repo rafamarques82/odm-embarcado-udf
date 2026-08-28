@@ -27,9 +27,7 @@ public final class ODMMetricsManager {
     private static volatile String               s3Region    = "us-east-1";
     private static volatile S3MetricsAccumulator accumulator = null;
     private static volatile long                 startMs     = 0L;
-
-    /** Broadcast que sinaliza aos executores que init() foi chamado. */
-    static volatile Broadcast<Boolean> initializedBroadcast = null;
+    private static volatile boolean              flushed     = false;
 
     private ODMMetricsManager() {}
 
@@ -97,6 +95,7 @@ public final class ODMMetricsManager {
                 "[ODMMetricsManager] ERRO: init() não foi chamado antes do flush()."
             );
         }
+        flushed = true; // marcar antes de enviar — mesmo que o envio falhe, o commit pode prosseguir
         if (totalCount == 0) {
             System.out.println("[ODMMetricsManager] Nenhuma execução registrada — flush ignorado.");
             return;
@@ -115,6 +114,19 @@ public final class ODMMetricsManager {
         } catch (Exception e) {
             System.err.println("[ODMMetricsManager] ❌ Erro ao enviar relatórios: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    /**
+     * Verifica se flush() foi chamado após init().
+     * Deve ser chamado antes de job.commit() — lança IllegalStateException se flush() foi omitido.
+     */
+    public static void flushRequired() {
+        if (s3Bucket != null && !flushed) {
+            throw new IllegalStateException(
+                "[ODMMetricsManager] ERRO: flush() não foi chamado.\n" +
+                "Chame ODMMetricsManager.flush(...) antes de job.commit()."
+            );
         }
     }
 }

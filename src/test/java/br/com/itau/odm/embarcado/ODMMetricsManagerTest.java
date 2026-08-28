@@ -20,12 +20,12 @@ class ODMMetricsManagerTest {
 
     @AfterEach
     void resetState() throws Exception {
-        setField("s3Bucket",             null);
-        setField("s3Prefix",             "odm-metrics");
-        setField("s3Region",             "us-east-1");
-        setField("accumulator",          null);
-        setField("startMs",              0L);
-        setField("initializedBroadcast", null);
+        setField("s3Bucket",    null);
+        setField("s3Prefix",    "odm-metrics");
+        setField("s3Region",    "us-east-1");
+        setField("accumulator", null);
+        setField("startMs",     0L);
+        setField("flushed",     false);
     }
 
     // -------------------------------------------------------------------------
@@ -76,6 +76,33 @@ class ODMMetricsManagerTest {
         assertDoesNotThrow(() ->
             ODMMetricsManager.flush(0L, 0L, 0L, 0L, "/r/1.0/t",
                 System.currentTimeMillis(), System.currentTimeMillis()));
+    }
+
+    // -------------------------------------------------------------------------
+    // flushRequired()
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("flushRequired() após init() sem flush() lança IllegalStateException")
+    void flushRequired_withoutFlush_throws() throws Exception {
+        setField("s3Bucket", "meu-bucket");
+        setField("flushed",  false);
+        assertThrows(IllegalStateException.class, ODMMetricsManager::flushRequired);
+    }
+
+    @Test
+    @DisplayName("flushRequired() após flush() não lança exceção")
+    void flushRequired_afterFlush_doesNotThrow() throws Exception {
+        setField("s3Bucket", "meu-bucket");
+        setField("flushed",  true);
+        assertDoesNotThrow(ODMMetricsManager::flushRequired);
+    }
+
+    @Test
+    @DisplayName("flushRequired() sem init() não lança exceção")
+    void flushRequired_withoutInit_doesNotThrow() {
+        // s3Bucket é null — init() não foi chamado — flushRequired() é no-op
+        assertDoesNotThrow(ODMMetricsManager::flushRequired);
     }
 
     // -------------------------------------------------------------------------
