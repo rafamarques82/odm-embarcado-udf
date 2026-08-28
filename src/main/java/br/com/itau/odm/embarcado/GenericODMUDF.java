@@ -27,11 +27,10 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
     private static FacadeSessionFactory sessionFactory;
 
     /**
-     * Accumulator compartilhado: registrado no driver via ODMMetricsManager e
-     * propagado pelo Spark para todos os executores. Cada executor faz add() aqui;
-     * o Spark agrega automaticamente de volta ao driver após cada stage.
+     * Accumulator injetado nos executores via foreachPartition no ODMMetricsManager.init().
+     * Cada executor faz add() aqui; o Spark propaga de volta ao driver automaticamente.
      */
-    static volatile S3MetricsAccumulator metricsAccumulator = null;
+    static volatile S3MetricsAccumulator executorAccumulator = null;
     
     static {
         try {
@@ -317,7 +316,7 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
     
     /** Registra uma execução no accumulator (executor) ou ignora silenciosamente se não configurado. */
     private static void recordMetrics(String rulesetPath, long durationMs, int rulesFired, boolean success) {
-        S3MetricsAccumulator acc = metricsAccumulator;
+        S3MetricsAccumulator acc = executorAccumulator;
         if (acc == null) return;
         try {
             acc.recordExecution(rulesetPath, durationMs, rulesFired, success);

@@ -496,16 +496,8 @@ else:
     print("  ℹ️ Nenhum resultado para salvar.")
 
 df_result.unpersist()
+# Métricas ILMT enviadas automaticamente via SparkListener registrado no init()
 
-# =============================================================================
-# 📊 ENVIAR RELATÓRIO ILMT PARA S3 (via ODMMetricsManager)
-# =============================================================================
-
-jvm.br.com.itau.odm.embarcado.ODMMetricsManager.flush(
-    int(total_processed), int(success), int(errors),
-    int(elapsed_time * 1000), RULESET_PATH,
-    int(start_time * 1000), int(time.time() * 1000),
-)
 
 # =============================================================================
 # ✅ FINALIZAR JOB

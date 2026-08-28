@@ -11,21 +11,32 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Testes unitários para ODMMetricsManager.
  *
- * init() valida e armazena configs; flush() envia usando as configs guardadas.
+ * init(sc, bucket, prefix, region) valida, registra Accumulator, propaga para executores
+ * e registra SparkListener para flush() automático.
+ * flush() é chamado automaticamente — mas também pode ser chamado manualmente.
  */
 @DisplayName("ODMMetricsManager")
 class ODMMetricsManagerTest {
 
     @AfterEach
     void resetState() throws Exception {
-        setField("s3Bucket", null);
-        setField("s3Prefix", "odm-metrics");
-        setField("s3Region",  "us-east-1");
+        setField("s3Bucket",    null);
+        setField("s3Prefix",    "odm-metrics");
+        setField("s3Region",    "us-east-1");
+        setField("accumulator", null);
+        setField("startMs",     0L);
     }
 
     // -------------------------------------------------------------------------
-    // init() — validação
+    // init() — validação de parâmetros (sem SparkContext real)
     // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("init() com sc null lança IllegalArgumentException")
+    void init_nullSc_throws() {
+        assertThrows(IllegalArgumentException.class, () ->
+            ODMMetricsManager.init(null, "meu-bucket", "prefix", "us-east-1"));
+    }
 
     @Test
     @DisplayName("init() com bucket null lança IllegalArgumentException")
@@ -41,43 +52,26 @@ class ODMMetricsManagerTest {
             ODMMetricsManager.init(null, "  ", "prefix", "us-east-1"));
     }
 
+    // -------------------------------------------------------------------------
+    // flush() sem init() — retorna silenciosamente (listener pode chamar antes do init)
+    // -------------------------------------------------------------------------
+
     @Test
-    @DisplayName("init() com SparkContext null lança IllegalArgumentException")
-    void init_nullSc_throws() {
-        assertThrows(IllegalArgumentException.class, () ->
-            ODMMetricsManager.init(null, "meu-bucket", "prefix", "us-east-1"));
+    @DisplayName("flush() sem init() retorna silenciosamente sem lançar exceção")
+    void flush_withoutInit_silentReturn() {
+        assertDoesNotThrow(ODMMetricsManager::flush);
     }
 
     // -------------------------------------------------------------------------
-    // flush() sem init() — lança IllegalStateException
+    // flush() com accumulator zerado — retorna sem tentar S3
     // -------------------------------------------------------------------------
 
     @Test
-    @DisplayName("flush() sem init() lança IllegalStateException")
-    void flush_withoutInit_throwsIllegalStateException() {
-        assertThrows(IllegalStateException.class, () ->
-            ODMMetricsManager.flush(
-                100L, 99L, 1L, 5000L, "/my/ruleset/1.0/test",
-                System.currentTimeMillis() - 5000, System.currentTimeMillis()
-            )
-        );
-    }
-
-    // -------------------------------------------------------------------------
-    // flush() com totalCount=0 — retorna sem tentar S3
-    // -------------------------------------------------------------------------
-
-    @Test
-    @DisplayName("flush() com totalCount=0 não lança exceção e não tenta S3")
-    void flush_zeroCount_doesNotThrow() throws Exception {
-        // Simular init() sem SparkContext: setar s3Bucket diretamente
-        setField("s3Bucket", "meu-bucket");
-        assertDoesNotThrow(() ->
-            ODMMetricsManager.flush(
-                0L, 0L, 0L, 0L, "/my/ruleset/1.0/test",
-                System.currentTimeMillis(), System.currentTimeMillis()
-            )
-        );
+    @DisplayName("flush() com accumulator zerado não tenta S3")
+    void flush_zeroAccumulator_doesNotThrow() throws Exception {
+        setField("s3Bucket",    "meu-bucket");
+        setField("accumulator", new S3MetricsAccumulator());
+        assertDoesNotThrow(ODMMetricsManager::flush);
     }
 
     // -------------------------------------------------------------------------

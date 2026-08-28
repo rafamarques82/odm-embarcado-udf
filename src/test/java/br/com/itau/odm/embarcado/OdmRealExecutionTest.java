@@ -84,7 +84,7 @@ class OdmRealExecutionTest {
         accumulator = accClass.getDeclaredConstructor().newInstance();
 
         Class<?> udfClass = loader.loadClass("br.com.itau.odm.embarcado.GenericODMUDF");
-        Field accField = udfClass.getDeclaredField("metricsAccumulator");
+        Field accField = udfClass.getDeclaredField("executorAccumulator");
         accField.setAccessible(true);
         accField.set(null, accumulator);
 
