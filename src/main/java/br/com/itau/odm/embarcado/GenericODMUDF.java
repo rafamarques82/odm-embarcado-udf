@@ -55,17 +55,6 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
     
     @Override
     public String call(String inputJson) throws Exception {
-        // Verificar se ODMMetricsManager.init() foi chamado.
-        // SparkConf é propagada pelo driver para todos os executores (inclusive elastic scaling).
-        // Fallback em System Property para testes unitários sem SparkContext.
-        boolean initialized = isInitialized();
-        if (!initialized) {
-            throw new IllegalStateException(
-                "[GenericODMUDF] ERRO: ODMMetricsManager.init() não foi chamado.\n" +
-                "Chame ODMMetricsManager.init(sc, bucket, prefix, region) antes de executar a UDF."
-            );
-        }
-
         long startTime = System.nanoTime();
         
         try {
