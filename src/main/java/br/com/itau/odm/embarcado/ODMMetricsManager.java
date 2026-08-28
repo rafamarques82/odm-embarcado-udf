@@ -76,13 +76,6 @@ public final class ODMMetricsManager {
                         sc.defaultParallelism())
            .foreachPartition(it -> GenericODMUDF.executorAccumulator = acc);
 
-        // SparkListener: flush() automático quando a aplicação termina
-        sc.addSparkListener(new SparkListener() {
-            @Override
-            public void onApplicationEnd(SparkListenerApplicationEnd end) {
-                flush();
-            }
-        });
 
         System.out.println("[ODMMetricsManager] Inicializado — flush automático registrado.");
         System.out.println("[ODMMetricsManager]   Bucket: " + s3Bucket);
@@ -91,37 +84,32 @@ public final class ODMMetricsManager {
     }
 
     /**
-     * Lê as métricas do Accumulator e envia os relatórios para S3.
-     * Chamado automaticamente pelo SparkListener no fim da aplicação.
-     * Também pode ser chamado manualmente se necessário.
+     * Envia relatórios com os dados fornecidos pelo driver (calculados do DataFrame).
+     * Usa bucket/prefix/region configurados pelo init().
      */
-    public static void flush() {
-        if (s3Bucket == null || accumulator == null) {
-            System.out.println("[ODMMetricsManager] flush() ignorado — init() não foi chamado.");
-            return;
+    public static void flush(
+            long totalCount, long okCount, long errorCount,
+            long totalDurationMs, String rulesetPath,
+            long startMs, long endMs
+    ) {
+        if (s3Bucket == null) {
+            throw new IllegalStateException(
+                "[ODMMetricsManager] ERRO: init() não foi chamado antes do flush()."
+            );
         }
-
-        S3MetricsAccumulator.MetricsData metrics = accumulator.value();
-
-        if (metrics.totalCount == 0) {
+        if (totalCount == 0) {
             System.out.println("[ODMMetricsManager] Nenhuma execução registrada — flush ignorado.");
             return;
         }
-
-        long endMs  = metrics.endTimestampMs > 0 ? metrics.endTimestampMs : System.currentTimeMillis();
-        long begMs  = metrics.startTimestampMs > 0 ? metrics.startTimestampMs : startMs;
-
         System.out.println("[ODMMetricsManager] Enviando relatórios ILMT para S3...");
         System.out.printf("[ODMMetricsManager]   Total: %d | OK: %d | Erros: %d | Duração: %dms | Ruleset: %s%n",
-                metrics.totalCount, metrics.okCount, metrics.errorCount,
-                metrics.totalDurationMs, metrics.rulesetPath);
-
+                totalCount, okCount, errorCount, totalDurationMs, rulesetPath);
         try {
             S3MetricsAggregator.sendAggregatedMetrics(
                     s3Bucket, s3Prefix, s3Region,
-                    metrics.totalCount, metrics.okCount, metrics.errorCount,
-                    metrics.totalDurationMs, metrics.totalRulesFired,
-                    metrics.rulesetPath, begMs, endMs
+                    totalCount, okCount, errorCount,
+                    totalDurationMs, 0L,
+                    rulesetPath, startMs, endMs
             );
             System.out.println("[ODMMetricsManager] ✅ Relatórios enviados com sucesso!");
         } catch (Exception e) {

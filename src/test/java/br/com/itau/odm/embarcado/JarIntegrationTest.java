@@ -331,7 +331,9 @@ class JarIntegrationTest {
         Method init  = mgr.getMethod("init",
                 org.apache.spark.SparkContext.class,
                 String.class, String.class, String.class);
-        Method flush = mgr.getMethod("flush");
+        Method flush = mgr.getMethod("flush",
+                long.class, long.class, long.class, long.class,
+                String.class, long.class, long.class);
         assertNotNull(init,  "ODMMetricsManager.init() deve ser público");
         assertNotNull(flush, "ODMMetricsManager.flush() deve ser público");
         System.out.println("\n   ✅ ODMMetricsManager.init()  — presente");
@@ -344,21 +346,22 @@ class JarIntegrationTest {
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
         System.out.println("   ✅ init(null bucket) — lança IllegalArgumentException");
 
-        // flush() sem init() retorna silenciosamente
-        assertDoesNotThrow(() -> flush.invoke(null));
-        System.out.println("   ✅ flush() sem init() — retorna silenciosamente");
-
-        // flush() com accumulator zerado não tenta S3
+        // flush() sem init() lança IllegalStateException
         java.lang.reflect.Field s3BucketField = mgr.getDeclaredField("s3Bucket");
-        java.lang.reflect.Field accField      = mgr.getDeclaredField("accumulator");
         s3BucketField.setAccessible(true);
-        accField.setAccessible(true);
-        s3BucketField.set(null, "meu-bucket");
-        Class<?> accCls = jarLoader.loadClass("br.com.itau.odm.embarcado.S3MetricsAccumulator");
-        accField.set(null, accCls.getDeclaredConstructor().newInstance());
-        assertDoesNotThrow(() -> flush.invoke(null));
-        System.out.println("   ✅ flush() com accumulator zerado — retorna sem tentar S3");
         s3BucketField.set(null, null);
-        accField.set(null, null);
+        java.lang.reflect.InvocationTargetException ex2 = assertThrows(
+                java.lang.reflect.InvocationTargetException.class,
+                () -> flush.invoke(null, 100L, 99L, 1L, 5000L, "/r/1.0/t",
+                        System.currentTimeMillis() - 1000, System.currentTimeMillis()));
+        assertInstanceOf(IllegalStateException.class, ex2.getCause());
+        System.out.println("   ✅ flush() sem init() — lança IllegalStateException");
+
+        // flush() com totalCount=0 não tenta S3
+        s3BucketField.set(null, "meu-bucket");
+        assertDoesNotThrow(() -> flush.invoke(null, 0L, 0L, 0L, 0L, "/r/1.0/t",
+                System.currentTimeMillis(), System.currentTimeMillis()));
+        System.out.println("   ✅ flush(totalCount=0) — retorna sem tentar S3");
+        s3BucketField.set(null, null);
     }
 }

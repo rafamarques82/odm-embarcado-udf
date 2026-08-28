@@ -58,21 +58,24 @@ class ODMMetricsManagerTest {
     // -------------------------------------------------------------------------
 
     @Test
-    @DisplayName("flush() sem init() retorna silenciosamente sem lançar exceção")
-    void flush_withoutInit_silentReturn() {
-        assertDoesNotThrow(ODMMetricsManager::flush);
+    @DisplayName("flush() sem init() lança IllegalStateException")
+    void flush_withoutInit_throws() {
+        assertThrows(IllegalStateException.class, () ->
+            ODMMetricsManager.flush(100L, 99L, 1L, 5000L, "/r/1.0/t",
+                System.currentTimeMillis() - 1000, System.currentTimeMillis()));
     }
 
     // -------------------------------------------------------------------------
-    // flush() com accumulator zerado — retorna sem tentar S3
+    // flush() com totalCount=0 — retorna sem tentar S3
     // -------------------------------------------------------------------------
 
     @Test
-    @DisplayName("flush() com accumulator zerado não tenta S3")
-    void flush_zeroAccumulator_doesNotThrow() throws Exception {
-        setField("s3Bucket",    "meu-bucket");
-        setField("accumulator", new S3MetricsAccumulator());
-        assertDoesNotThrow(ODMMetricsManager::flush);
+    @DisplayName("flush() com totalCount=0 não tenta S3")
+    void flush_zeroCount_doesNotThrow() throws Exception {
+        setField("s3Bucket", "meu-bucket");
+        assertDoesNotThrow(() ->
+            ODMMetricsManager.flush(0L, 0L, 0L, 0L, "/r/1.0/t",
+                System.currentTimeMillis(), System.currentTimeMillis()));
     }
 
     // -------------------------------------------------------------------------
