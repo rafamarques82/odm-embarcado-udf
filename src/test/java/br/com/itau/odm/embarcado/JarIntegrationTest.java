@@ -338,10 +338,14 @@ class JarIntegrationTest {
         System.out.println("\n   ✅ ODMMetricsManager.init()  — presente");
         System.out.println("   ✅ ODMMetricsManager.flush() — presente");
 
-        // flush() sem init() deve ser seguro (não lançar exceção)
+        // flush() sem init() deve lançar IllegalStateException
         Method flush = mgr.getMethod("flush");
-        assertDoesNotThrow(() -> flush.invoke(null),
-                "flush() sem init() não deve lançar exceção");
-        System.out.println("   ✅ flush() sem init() — seguro");
+        java.lang.reflect.InvocationTargetException ex = assertThrows(
+                java.lang.reflect.InvocationTargetException.class,
+                () -> flush.invoke(null),
+                "flush() sem init() deve lançar IllegalStateException");
+        assertInstanceOf(IllegalStateException.class, ex.getCause(),
+                "Causa deve ser IllegalStateException");
+        System.out.println("   ✅ flush() sem init() — lança IllegalStateException corretamente");
     }
 }

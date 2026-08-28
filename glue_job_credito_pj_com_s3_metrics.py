@@ -117,8 +117,6 @@ print(f"  Bucket: {args['S3_METRICS_BUCKET']}")
 print(f"  Prefix: {args['S3_METRICS_PREFIX']}")
 print(f"  Region: {args['S3_METRICS_REGION']}")
 print("=" * 80)
-
-print("=" * 80)
 print("🚀 AWS GLUE JOB - Crédito PJ (Full Tuning + S3 Metrics)")
 print("=" * 80)
 print(f"Job Name: {args['JOB_NAME']}")

@@ -43,9 +43,22 @@ public final class ODMMetricsManager {
             return;
         }
 
-        s3Bucket = bucket;
-        s3Prefix = (prefix != null && !prefix.isEmpty()) ? prefix : "odm-metrics";
-        s3Region = (region != null && !region.isEmpty()) ? region : "us-east-1";
+        // Validação obrigatória — bucket é o único campo sem default aceitável
+        if (bucket == null || bucket.trim().isEmpty()) {
+            throw new IllegalArgumentException(
+                "[ODMMetricsManager] ERRO: 'bucket' é obrigatório e não foi informado.\n" +
+                "Configure o job parameter --S3_METRICS_BUCKET no Glue Job."
+            );
+        }
+        if (sc == null) {
+            throw new IllegalArgumentException(
+                "[ODMMetricsManager] ERRO: SparkContext não pode ser null."
+            );
+        }
+
+        s3Bucket = bucket.trim();
+        s3Prefix = (prefix != null && !prefix.trim().isEmpty()) ? prefix.trim() : "odm-metrics";
+        s3Region = (region != null && !region.trim().isEmpty()) ? region.trim() : "us-east-1";
 
         // Criar e registrar accumulator no Spark
         accumulator = new S3MetricsAccumulator();
@@ -68,8 +81,11 @@ public final class ODMMetricsManager {
      */
     public static void flush() {
         if (!initialized || accumulator == null) {
-            System.out.println("[ODMMetricsManager] Não inicializado — flush ignorado.");
-            return;
+            throw new IllegalStateException(
+                "[ODMMetricsManager] ERRO: flush() chamado sem init() ter sido executado.\n" +
+                "Certifique-se de chamar ODMMetricsManager.init(sc, bucket, prefix, region) " +
+                "antes de executar o job."
+            );
         }
 
         S3MetricsAccumulator.MetricsData metrics = accumulator.value();

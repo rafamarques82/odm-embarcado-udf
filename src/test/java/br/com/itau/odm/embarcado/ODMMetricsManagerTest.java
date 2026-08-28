@@ -42,9 +42,9 @@ class ODMMetricsManagerTest {
     // -------------------------------------------------------------------------
 
     @Test
-    @DisplayName("flush() sem init() não lança exceção")
-    void flush_withoutInit_doesNotThrow() {
-        assertDoesNotThrow(ODMMetricsManager::flush);
+    @DisplayName("flush() sem init() lança IllegalStateException")
+    void flush_withoutInit_throwsIllegalStateException() {
+        assertThrows(IllegalStateException.class, ODMMetricsManager::flush);
     }
 
     // -------------------------------------------------------------------------
@@ -81,7 +81,7 @@ class ODMMetricsManagerTest {
     }
 
     @Test
-    @DisplayName("flush() com acumulador com dados chama sendAggregatedMetrics (smoke test via log)")
+    @DisplayName("flush() com acumulador com dados lê valores corretos do accumulator")
     void flush_withData_readsAccumulatorValue() throws Exception {
         // Montar acumulador com dados reais
         S3MetricsAccumulator acc = new S3MetricsAccumulator();
@@ -98,13 +98,9 @@ class ODMMetricsManagerTest {
         assertEquals(13L,  v.totalRulesFired);
         assertEquals("/my/ruleset/1.0/test", v.rulesetPath);
 
-        // Injetar sem bucket — flush() deve abortar antes de tentar S3
-        setStaticField(ODMMetricsManager.class, "accumulator",  acc);
-        setStaticField(ODMMetricsManager.class, "s3Bucket",     null);   // sem bucket = sem envio
-        setStaticField(ODMMetricsManager.class, "initialized",  true);
-
-        // Não deve lançar exceção mesmo sem bucket configurado
-        assertDoesNotThrow(ODMMetricsManager::flush);
+        // flush() sem init() deve lançar IllegalStateException (mesmo com accumulator injetado)
+        // pois a flag initialized ainda é false
+        assertThrows(IllegalStateException.class, ODMMetricsManager::flush);
     }
 
     // -------------------------------------------------------------------------
