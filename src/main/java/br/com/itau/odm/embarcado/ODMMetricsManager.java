@@ -28,6 +28,9 @@ public final class ODMMetricsManager {
      * @param endMs           Epoch ms do fim
      */
     public static void flush(
+            String bucket,
+            String prefix,
+            String region,
             long totalCount,
             long okCount,
             long errorCount,
@@ -36,13 +39,9 @@ public final class ODMMetricsManager {
             long startMs,
             long endMs
     ) {
-        String bucket = System.getenv("S3_METRICS_BUCKET");
-        String prefix = System.getenv("S3_METRICS_PREFIX");
-        String region = System.getenv("S3_METRICS_REGION");
-
         if (bucket == null || bucket.trim().isEmpty()) {
             throw new IllegalArgumentException(
-                "[ODMMetricsManager] ERRO: variável de ambiente S3_METRICS_BUCKET não configurada.\n" +
+                "[ODMMetricsManager] ERRO: 'bucket' é obrigatório.\n" +
                 "Configure o job parameter --S3_METRICS_BUCKET no Glue Job."
             );
         }

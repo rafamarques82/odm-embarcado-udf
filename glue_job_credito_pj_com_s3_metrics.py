@@ -494,6 +494,7 @@ df_result.unpersist()
 # =============================================================================
 
 jvm.br.com.itau.odm.embarcado.ODMMetricsManager.flush(
+    args['S3_METRICS_BUCKET'], args['S3_METRICS_PREFIX'], args['S3_METRICS_REGION'],
     int(total_processed), int(success), int(errors),
     int(elapsed_time * 1000), RULESET_PATH,
     int(start_time * 1000), int(time.time() * 1000),
