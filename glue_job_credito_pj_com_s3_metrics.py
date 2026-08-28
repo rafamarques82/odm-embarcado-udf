@@ -400,6 +400,8 @@ if total_processed > 0 and elapsed_time > 0:
     print(f"  Tempo médio/registro: {avg_ms:.2f}ms")
 
 # Análise de erros/sucesso
+success = 0
+errors  = 0
 if total_processed > 0:
     df_analysis = df_result.select(
         count(when(col("odm_output").contains('"error"'), True)).alias("errors"),
