@@ -318,34 +318,40 @@ class JarIntegrationTest {
     }
 
     // =========================================================================
-    // Teste 6 — ODMMetricsManager presente e método flush() acessível
+    // Teste 6 — ODMMetricsManager presente e método flushWithData() acessível
     // =========================================================================
 
     @Test
-    @DisplayName("ODMMetricsManager do JAR expõe init() e flush() públicos")
+    @DisplayName("ODMMetricsManager do JAR expõe flushWithData() público")
     void jar_odmMetricsManagerHasRequiredMethods() throws Exception {
         Class<?> mgr = jarLoader.loadClass(
                 "br.com.itau.odm.embarcado.ODMMetricsManager");
 
-        // Verificar métodos públicos estáticos
-        assertDoesNotThrow(() -> mgr.getMethod("flush"),
-                "ODMMetricsManager.flush() deve ser público");
-        assertDoesNotThrow(() -> mgr.getMethod("init",
-                org.apache.spark.SparkContext.class,
-                String.class, String.class, String.class),
-                "ODMMetricsManager.init(SparkContext, String, String, String) deve existir");
+        // Verificar método flushWithData público e estático
+        Method flushWithData = mgr.getMethod("flushWithData",
+                String.class, String.class, String.class,
+                long.class, long.class, long.class, long.class,
+                long.class, String.class, long.class, long.class);
+        assertNotNull(flushWithData, "ODMMetricsManager.flushWithData() deve ser público");
+        System.out.println("\n   ✅ ODMMetricsManager.flushWithData() — presente");
 
-        System.out.println("\n   ✅ ODMMetricsManager.init()  — presente");
-        System.out.println("   ✅ ODMMetricsManager.flush() — presente");
-
-        // flush() sem init() deve lançar IllegalStateException
-        Method flush = mgr.getMethod("flush");
+        // flushWithData() com bucket null deve lançar IllegalArgumentException
         java.lang.reflect.InvocationTargetException ex = assertThrows(
                 java.lang.reflect.InvocationTargetException.class,
-                () -> flush.invoke(null),
-                "flush() sem init() deve lançar IllegalStateException");
-        assertInstanceOf(IllegalStateException.class, ex.getCause(),
-                "Causa deve ser IllegalStateException");
-        System.out.println("   ✅ flush() sem init() — lança IllegalStateException corretamente");
+                () -> flushWithData.invoke(null,
+                        null, "prefix", "us-east-1",
+                        100L, 99L, 1L, 5000L, 0L, "/test/1.0/r",
+                        System.currentTimeMillis() - 1000, System.currentTimeMillis()),
+                "flushWithData() com bucket null deve lançar IllegalArgumentException");
+        assertInstanceOf(IllegalArgumentException.class, ex.getCause(),
+                "Causa deve ser IllegalArgumentException");
+        System.out.println("   ✅ flushWithData(null bucket) — lança IllegalArgumentException corretamente");
+
+        // flushWithData() com totalCount=0 não deve lançar exceção
+        assertDoesNotThrow(() -> flushWithData.invoke(null,
+                "meu-bucket", "odm-metrics", "sa-east-1",
+                0L, 0L, 0L, 0L, 0L, "/test/1.0/r",
+                System.currentTimeMillis(), System.currentTimeMillis()));
+        System.out.println("   ✅ flushWithData(totalCount=0) — retorna sem tentar S3");
     }
 }
