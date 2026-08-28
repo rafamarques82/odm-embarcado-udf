@@ -253,15 +253,7 @@ final class S3Metrics {
                 }
             }
         }
-
-        // Hook único: envia resumo no shutdown
-        registerShutdownHookOnce();
-    }
-
-    private static void registerShutdownHookOnce() {
-        if (HOOKED.compareAndSet(false, true)) {
-            Runtime.getRuntime().addShutdownHook(new Thread(S3Metrics::safeFlushAndClose, "odm-s3-shutdown"));
-        }
+        // Sem shutdown hook: métricas são gerenciadas pelo ODMMetricsManager via Spark Accumulator.
     }
 
     private static void safeFlushAndClose() {

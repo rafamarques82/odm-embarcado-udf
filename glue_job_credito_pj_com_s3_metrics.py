@@ -95,37 +95,28 @@ XU_COMPILATION_THREADS = 20   # Threads para compilar regras
 # 🚀 INÍCIO
 # =============================================================================
 
-args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+args = getResolvedOptions(sys.argv, [
+    'JOB_NAME',
+    'S3_METRICS_BUCKET',
+    'S3_METRICS_PREFIX',
+    'S3_METRICS_REGION',
+])
 
 # =============================================================================
 # 📊 CONFIGURAR S3 METRICS
 # =============================================================================
 
-# Obter parâmetros S3 Metrics do Glue Job (se configurados)
-try:
-    s3_metrics_args = getResolvedOptions(sys.argv, [
-        'S3_METRICS_BUCKET',
-        'S3_METRICS_PREFIX',
-        'S3_METRICS_REGION'
-    ])
-    
-    # Configurar variáveis de ambiente para Java
-    os.environ['S3_METRICS_BUCKET'] = s3_metrics_args['S3_METRICS_BUCKET']
-    os.environ['S3_METRICS_PREFIX'] = s3_metrics_args['S3_METRICS_PREFIX']
-    os.environ['S3_METRICS_REGION'] = s3_metrics_args['S3_METRICS_REGION']
-    
-    print("=" * 80)
-    print("📊 S3 METRICS CONFIGURADO")
-    print("=" * 80)
-    print(f"  Bucket: {s3_metrics_args['S3_METRICS_BUCKET']}")
-    print(f"  Prefix: {s3_metrics_args['S3_METRICS_PREFIX']}")
-    print(f"  Region: {s3_metrics_args['S3_METRICS_REGION']}")
-    print("=" * 80)
-    
-except Exception as e:
-    print(f"⚠️  S3 Metrics não configurado (opcional): {e}")
-    print("   Para habilitar, adicione os job parameters:")
-    print("   --S3_METRICS_BUCKET, --S3_METRICS_PREFIX, --S3_METRICS_REGION")
+os.environ['S3_METRICS_BUCKET'] = args['S3_METRICS_BUCKET']
+os.environ['S3_METRICS_PREFIX'] = args['S3_METRICS_PREFIX']
+os.environ['S3_METRICS_REGION'] = args['S3_METRICS_REGION']
+
+print("=" * 80)
+print("📊 S3 METRICS CONFIGURADO")
+print("=" * 80)
+print(f"  Bucket: {args['S3_METRICS_BUCKET']}")
+print(f"  Prefix: {args['S3_METRICS_PREFIX']}")
+print(f"  Region: {args['S3_METRICS_REGION']}")
+print("=" * 80)
 
 print("=" * 80)
 print("🚀 AWS GLUE JOB - Crédito PJ (Full Tuning + S3 Metrics)")
@@ -180,18 +171,20 @@ glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 
 # =============================================================================
-# 📊 CONFIGURAR SYSTEM PROPERTIES DO JAVA PARA S3 METRICS
+# 📊 INICIALIZAR ODM METRICS MANAGER (Spark Accumulator)
 # =============================================================================
-
-if 'S3_METRICS_BUCKET' in os.environ:
-    jvm = spark.sparkContext._jvm
-    jvm.System.setProperty("S3_METRICS_BUCKET", os.environ['S3_METRICS_BUCKET'])
-    jvm.System.setProperty("S3_METRICS_PREFIX", os.environ['S3_METRICS_PREFIX'])
-    jvm.System.setProperty("S3_METRICS_REGION", os.environ['S3_METRICS_REGION'])
-    print("  ✅ S3 Metrics: System Properties configuradas na JVM")
 
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
+
+jvm = spark.sparkContext._jvm
+jvm.br.com.itau.odm.embarcado.ODMMetricsManager.init(
+    spark.sparkContext._jsc.sc(),
+    args['S3_METRICS_BUCKET'],
+    args['S3_METRICS_PREFIX'],
+    args['S3_METRICS_REGION']
+)
+print("  ✅ ODMMetricsManager inicializado (Spark Accumulator ativo)")
 
 # --- Aplicar tunings via SparkContext (runtime) ---
 jvm = spark.sparkContext._jvm
@@ -506,82 +499,12 @@ else:
 df_result.unpersist()
 
 # =============================================================================
-# 📊 ENVIAR RELATÓRIO ILMT PARA S3
+# 📊 ENVIAR RELATÓRIO ILMT PARA S3 (via ODMMetricsManager)
 # =============================================================================
-print("\n" + "=" * 80)
-print("📊 GERANDO E ENVIANDO RELATÓRIO ILMT PARA S3")
-print("=" * 80)
 
-# Configuração S3 para ILMT
-S3_ILMT_BUCKET = S3_OUTPUT_BUCKET
-S3_ILMT_PREFIX = "embarcado/ilmt-reports/"
-S3_ILMT_REGION = S3_REGION
-
-if total_processed > 0:
-    try:
-        # Calcular timestamps de início e fim do job
-        job_start_ms = int(start_time * 1000)
-        job_end_ms   = int((start_time + elapsed_time) * 1000)
-        
-        print(f"  📋 Informações do Relatório:")
-        print(f"     Ruleset:        {RULESET_PATH}")
-        print(f"     Total Decisões: {total_processed:,}")
-        print(f"     Início:         {datetime.fromtimestamp(start_time).isoformat()}")
-        print(f"     Fim:            {datetime.fromtimestamp(start_time + elapsed_time).isoformat()}")
-        print(f"     Duração:        {elapsed_time:.2f}s")
-        
-        # Chamar método Java S3MetricsHelper.sendIlmtMetrics
-        print(f"\n  📤 Enviando para S3: s3://{S3_ILMT_BUCKET}/{S3_ILMT_PREFIX}")
-        
-        success = jvm.br.com.itau.odm.embarcado.S3MetricsHelper.sendIlmtMetrics(
-            S3_ILMT_BUCKET,      # bucketName
-            S3_ILMT_PREFIX,      # prefix
-            S3_ILMT_REGION,      # region
-            RULESET_PATH,        # rulesetPath
-            total_processed,     # totalDecisions (long)
-            job_start_ms,        # startTimeMs (long)
-            job_end_ms           # endTimeMs (long)
-        )
-        
-        if success:
-            print(f"  ✅ Relatórios ILMT enviados com sucesso!")
-            print(f"     📁 Bucket:  s3://{S3_ILMT_BUCKET}")
-            print(f"     📂 Prefix:  {S3_ILMT_PREFIX}")
-            print(f"     📄 Arquivos:")
-            
-            # Calcular path dos arquivos gerados
-            partition_format = datetime.fromtimestamp(start_time)
-            partition = f"{partition_format.year:04d}/{partition_format.month:02d}/{partition_format.day:02d}/{partition_format.hour:02d}"
-            
-            ilmt_file = f"{S3_ILMT_PREFIX}{partition}/ilmt-report-{job_start_ms}.xml"
-            custom_file = f"{S3_ILMT_PREFIX}{partition}/custom-report-{job_start_ms}.xml"
-            
-            print(f"        • ILMT Report:   {ilmt_file}")
-            print(f"        • Custom Report: {custom_file}")
-            
-            # Estatísticas adicionais
-            million_decisions = total_processed / 1_000_000.0
-            thousand_decisions = total_processed / 1_000.0
-            
-            print(f"\n  📊 Métricas ILMT:")
-            if million_decisions >= 1.0:
-                print(f"     Métrica:  MILLION_MONTHLY_DECISIONS")
-                print(f"     Valor:    {million_decisions:.3f} milhões")
-            else:
-                print(f"     Métrica:  THOUSAND_MONTHLY_ARTIFACTS")
-                print(f"     Valor:    {thousand_decisions:.3f} mil")
-            
-        else:
-            print(f"  ⚠️  Falha ao enviar relatórios ILMT")
-            print(f"     Verifique as credenciais AWS e permissões do bucket")
-            
-    except Exception as e:
-        print(f"  ❌ ERRO ao gerar/enviar relatório ILMT: {e}")
-        import traceback
-        traceback.print_exc()
-        print(f"     Continuando execução do job...")
-else:
-    print("  ℹ️  Nenhuma decisão processada - relatório ILMT não gerado")
+# Os contadores foram acumulados automaticamente nos executores via Spark Accumulator.
+# O flush() lê o valor consolidado no driver e envia os XMLs para S3.
+jvm.br.com.itau.odm.embarcado.ODMMetricsManager.flush()
 
 # =============================================================================
 # ✅ FINALIZAR JOB
@@ -607,10 +530,7 @@ print(f"   ODM XU cache:        {XU_MAX_CACHE_SIZE} rulesets")
 print(f"   ODM XU pool:         {XU_MAX_POOL_SIZE} sessões/executor")
 print(f"   ODM forceUptodate:   {XU_FORCE_UPTODATE}")
 print(f"   Partições:           {optimal_partitions}")
-if 'S3_METRICS_BUCKET' in os.environ:
-    print(f"   S3 Metrics:          habilitado ({os.environ['S3_METRICS_BUCKET']})")
-else:
-    print(f"   S3 Metrics:          desabilitado")
+print(f"   S3 Metrics:          {args['S3_METRICS_BUCKET']}/{args['S3_METRICS_PREFIX']}")
 print("=" * 80)
 
 # Made with Bob

@@ -25,6 +25,13 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
     private static final long serialVersionUID = 1L;
     private static final Gson gson = new Gson();
     private static FacadeSessionFactory sessionFactory;
+
+    /**
+     * Accumulator compartilhado: registrado no driver via ODMMetricsManager e
+     * propagado pelo Spark para todos os executores. Cada executor faz add() aqui;
+     * o Spark agrega automaticamente de volta ao driver após cada stage.
+     */
+    static volatile S3MetricsAccumulator metricsAccumulator = null;
     
     static {
         try {
@@ -41,11 +48,7 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
             
             sessionFactory = new FacadeSessionFactory(config);
             
-            // Inicializar S3Metrics (opcional - não bloqueia se não configurado)
-            S3Metrics.initIfNeeded();
-            
-            System.out.println("[GenericODMUDF] Inicializada com integração Kafka + S3 (modo XU MEMORY)");
-            System.out.println("[GenericODMUDF] S3 Status: " + (S3Metrics.isReady() ? "ATIVO" : "DESABILITADO"));
+            System.out.println("[GenericODMUDF] Inicializada (modo XU MEMORY)");
         } catch (Exception e) {
             throw new RuntimeException("Erro ao inicializar GenericODMUDF", e);
         }
@@ -109,27 +112,20 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
             
             // Coletar métricas de execução usando reflection (mesmo método do FacadeStatelessSession)
             int rulesFired = tryGetTotalRulesFired(response);
-            
-            // DEBUG: Verificar se S3Metrics está pronto
-            System.out.println("[GenericODMUDF-DEBUG] Antes de recordExecution - S3Metrics.isReady(): " + S3Metrics.isReady());
-            System.out.println("[GenericODMUDF-DEBUG] rulesetPath: " + rulesetPath + ", executionTimeMs: " + executionTimeMs + ", rulesFired: " + rulesFired);
-            
-            // Enviar métricas ILMT para S3 (se configurado)
-            S3Metrics.recordExecution(rulesetPath, executionTimeMs, rulesFired, true);
-            
-            System.out.println("[GenericODMUDF-DEBUG] Depois de recordExecution - chamada concluída");
-            
+
+            // Registrar no accumulator (propagado pelo Spark ao driver automaticamente)
+            recordMetrics(rulesetPath, executionTimeMs, rulesFired, true);
+
             return gson.toJson(outputData);
             
         } catch (Exception e) {
             long durationMs = (System.nanoTime() - startTime) / 1_000_000L;
             System.err.println("[GenericODMUDF] Erro: " + e.getMessage());
             
-            // Registrar erro nas métricas ILMT
             Map<String, Object> errorInputData = gson.fromJson(inputJson, new TypeToken<Map<String, Object>>() {}.getType());
             Map<String, Object> errorConfig = (Map<String, Object>) errorInputData.get("__config__");
             String errorRulesetPath = errorConfig != null ? (String) errorConfig.get("ruleset_path") : "unknown";
-            S3Metrics.recordExecution(errorRulesetPath, durationMs, 0, false);
+            recordMetrics(errorRulesetPath, durationMs, 0, false);
             
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("error", e.getMessage());
@@ -142,7 +138,8 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
     
     private Object createObjectFromData(String className, Map<String, Object> data,
                                        Map<String, String> typeMapping) throws Exception {
-        Class<?> clazz = Class.forName(className);
+        Class<?> clazz = Class.forName(className, true,
+                Thread.currentThread().getContextClassLoader());
         Object obj = clazz.getDeclaredConstructor().newInstance();
         
         for (Map.Entry<String, Object> entry : data.entrySet()) {
@@ -309,15 +306,20 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
         return 0;
     }
     
+    /** Registra uma execução no accumulator (executor) ou ignora silenciosamente se não configurado. */
+    private static void recordMetrics(String rulesetPath, long durationMs, int rulesFired, boolean success) {
+        S3MetricsAccumulator acc = metricsAccumulator;
+        if (acc == null) return;
+        try {
+            acc.recordExecution(rulesetPath, durationMs, rulesFired, success);
+        } catch (Exception e) {
+            // Nunca deixar falha de métricas interromper a execução
+        }
+    }
+
     public static void shutdown() {
         if (sessionFactory != null) {
             sessionFactory.close();
-            System.out.println("[GenericODMUDF] Métricas enviadas ao Kafka");
-        }
-        
-        // S3Metrics envia automaticamente no shutdown (não precisa flush manual)
-        if (S3Metrics.isReady()) {
-            System.out.println("[GenericODMUDF] S3Metrics ativo - métricas serão enviadas no shutdown");
         }
     }
 }
