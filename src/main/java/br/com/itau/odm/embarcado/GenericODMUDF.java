@@ -56,11 +56,9 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
     @Override
     public String call(String inputJson) throws Exception {
         // Verificar se ODMMetricsManager.init() foi chamado.
-        // Usa broadcast (funciona com elastic scaling) com fallback em System Property (testes unitários).
-        boolean initialized =
-            (ODMMetricsManager.initializedBroadcast != null &&
-             Boolean.TRUE.equals(ODMMetricsManager.initializedBroadcast.value()))
-            || "true".equals(System.getProperty("odm.metrics.initialized"));
+        // SparkConf é propagada pelo driver para todos os executores (inclusive elastic scaling).
+        // Fallback em System Property para testes unitários sem SparkContext.
+        boolean initialized = isInitialized();
         if (!initialized) {
             throw new IllegalStateException(
                 "[GenericODMUDF] ERRO: ODMMetricsManager.init() não foi chamado.\n" +
@@ -318,6 +316,26 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
         return 0;
     }
     
+    /**
+     * Verifica se ODMMetricsManager.init() foi chamado.
+     * Lê a SparkConf via SparkEnv (disponível nos executores) com fallback
+     * em System Property para testes unitários sem SparkContext.
+     */
+    private static boolean isInitialized() {
+        // Fallback para testes unitários
+        if ("true".equals(System.getProperty("odm.metrics.initialized"))) {
+            return true;
+        }
+        // SparkEnv está disponível nos executores e contém a SparkConf do driver
+        try {
+            org.apache.spark.SparkEnv env = org.apache.spark.SparkEnv.get();
+            if (env != null) {
+                return "true".equals(env.conf().get("spark.odm.metrics.initialized", "false"));
+            }
+        } catch (Exception ignore) {}
+        return false;
+    }
+
     /** Registra uma execução no accumulator (executor) ou ignora silenciosamente se não configurado. */
     private static void recordMetrics(String rulesetPath, long durationMs, int rulesFired, boolean success) {
         S3MetricsAccumulator acc = executorAccumulator;

@@ -64,10 +64,11 @@ public final class ODMMetricsManager {
         accumulator = new S3MetricsAccumulator();
         sc.register(accumulator, "ODM-Metrics");
 
-        // Broadcast: entregue a QUALQUER executor (inclusive novos por elastic scaling)
-        // antes que ele execute qualquer task que referencie a variável.
+        // SparkConf: propagada para TODOS os executores (inclusive elastic scaling)
+        // pois faz parte da configuração da aplicação distribuída pelo driver.
+        sc.conf().set("spark.odm.metrics.initialized", "true");
+
         JavaSparkContext jsc = JavaSparkContext.fromSparkContext(sc);
-        initializedBroadcast = jsc.broadcast(Boolean.TRUE);
 
         // Propagar referência do Accumulator para os executores que já estão ativos
         final S3MetricsAccumulator acc = accumulator;
