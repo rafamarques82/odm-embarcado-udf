@@ -493,26 +493,10 @@ df_result.unpersist()
 # 📊 ENVIAR RELATÓRIO ILMT PARA S3 (via ODMMetricsManager)
 # =============================================================================
 
-# Métricas calculadas no driver a partir do df_result (campos já disponíveis)
-_odm_total    = int(total_processed)
-_odm_ok       = int(success)      if total_processed > 0 else 0
-_odm_errors   = int(errors)       if total_processed > 0 else 0
-_odm_duration = int(elapsed_time * 1000)  # segundos → ms
-_odm_start_ms = int(start_time * 1000)
-_odm_end_ms   = int(time.time() * 1000)
-
-jvm.br.com.itau.odm.embarcado.ODMMetricsManager.flushWithData(
-    args['S3_METRICS_BUCKET'],
-    args['S3_METRICS_PREFIX'],
-    args['S3_METRICS_REGION'],
-    _odm_total,
-    _odm_ok,
-    _odm_errors,
-    _odm_duration,
-    0,                   # totalRulesFired — não disponível via DataFrame
-    RULESET_PATH,
-    _odm_start_ms,
-    _odm_end_ms,
+jvm.br.com.itau.odm.embarcado.ODMMetricsManager.flush(
+    int(total_processed), int(success), int(errors),
+    int(elapsed_time * 1000), RULESET_PATH,
+    int(start_time * 1000), int(time.time() * 1000),
 )
 
 # =============================================================================

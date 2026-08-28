@@ -1,53 +1,48 @@
 package br.com.itau.odm.embarcado;
 
 /**
- * ODMMetricsManager — envia relatórios ILMT + custom para S3 com dados
- * calculados no driver Spark a partir do DataFrame de resultado.
+ * ODMMetricsManager — envia relatórios ILMT + custom para S3.
  *
- * Uso (driver, após df_result.count()):
- *   ODMMetricsManager.flushWithData(bucket, prefix, region,
- *       totalCount, okCount, errorCount, totalDurationMs,
- *       totalRulesFired, rulesetPath, startMs, endMs);
+ * Uso no driver (1 linha):
+ *   ODMMetricsManager.flush(total, ok, errors, durationMs, rulesetPath, startMs, endMs);
  *
- * Nota: campos static não são serializados pelo Spark para os executores,
- * por isso as métricas são calculadas no driver via DataFrame e passadas
- * diretamente para este método.
+ * Bucket, prefix e region são lidos automaticamente das variáveis de ambiente:
+ *   S3_METRICS_BUCKET  (obrigatório)
+ *   S3_METRICS_PREFIX  (opcional, default: "odm-metrics")
+ *   S3_METRICS_REGION  (opcional, default: "us-east-1")
  */
 public final class ODMMetricsManager {
 
     private ODMMetricsManager() {}
 
     /**
-     * Envia relatórios ILMT + custom para S3 com os valores fornecidos pelo driver.
+     * Envia relatórios ILMT + custom para S3.
+     * Lê bucket/prefix/region das variáveis de ambiente S3_METRICS_*.
      *
-     * @param bucket         Bucket S3 de destino (obrigatório)
-     * @param prefix         Prefixo/pasta no bucket (ex: "odm-metrics")
-     * @param region         Região AWS (ex: "sa-east-1")
-     * @param totalCount     Total de execuções ODM
-     * @param okCount        Execuções sem erro
-     * @param errorCount     Execuções com erro
-     * @param totalDurationMs Soma de __ExecutionTimeMs__ de todos os registros
-     * @param totalRulesFired Total de regras disparadas (0 se não disponível)
-     * @param rulesetPath    Caminho do ruleset (ex: "/bre_xxx/1.0/elege_yyy")
-     * @param startMs        Epoch ms do início do processamento ODM
-     * @param endMs          Epoch ms do fim do processamento ODM
+     * @param totalCount      Total de execuções ODM
+     * @param okCount         Execuções sem erro
+     * @param errorCount      Execuções com erro
+     * @param totalDurationMs Duração total em ms
+     * @param rulesetPath     Caminho do ruleset
+     * @param startMs         Epoch ms do início
+     * @param endMs           Epoch ms do fim
      */
-    public static void flushWithData(
-            String bucket,
-            String prefix,
-            String region,
+    public static void flush(
             long totalCount,
             long okCount,
             long errorCount,
             long totalDurationMs,
-            long totalRulesFired,
             String rulesetPath,
             long startMs,
             long endMs
     ) {
+        String bucket = System.getenv("S3_METRICS_BUCKET");
+        String prefix = System.getenv("S3_METRICS_PREFIX");
+        String region = System.getenv("S3_METRICS_REGION");
+
         if (bucket == null || bucket.trim().isEmpty()) {
             throw new IllegalArgumentException(
-                "[ODMMetricsManager] ERRO: 'bucket' é obrigatório.\n" +
+                "[ODMMetricsManager] ERRO: variável de ambiente S3_METRICS_BUCKET não configurada.\n" +
                 "Configure o job parameter --S3_METRICS_BUCKET no Glue Job."
             );
         }
@@ -67,17 +62,10 @@ public final class ODMMetricsManager {
 
         try {
             S3MetricsAggregator.sendAggregatedMetrics(
-                    s3Bucket,
-                    s3Prefix,
-                    s3Region,
-                    totalCount,
-                    okCount,
-                    errorCount,
-                    totalDurationMs,
-                    totalRulesFired,
-                    rulesetPath,
-                    startMs,
-                    endMs
+                    s3Bucket, s3Prefix, s3Region,
+                    totalCount, okCount, errorCount,
+                    totalDurationMs, 0L,
+                    rulesetPath, startMs, endMs
             );
             System.out.println("[ODMMetricsManager] ✅ Relatórios enviados com sucesso!");
         } catch (Exception e) {

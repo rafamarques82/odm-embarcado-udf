@@ -222,6 +222,8 @@
                         <additionalClasspathElement>${project.basedir}/exemplo/testeFinanciamento.jar</additionalClasspathElement>
                         <additionalClasspathElement>${project.basedir}/exemplo/xom-classes</additionalClasspathElement>
                     </additionalClasspathElements>
+                    <!-- Permite reflection em ProcessEnvironment (manipulação de env vars em testes) -->
+                    <argLine>--add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
 

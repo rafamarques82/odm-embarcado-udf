@@ -318,40 +318,73 @@ class JarIntegrationTest {
     }
 
     // =========================================================================
-    // Teste 6 — ODMMetricsManager presente e método flushWithData() acessível
+    // Teste 6 — ODMMetricsManager presente e método flush() acessível
     // =========================================================================
 
     @Test
-    @DisplayName("ODMMetricsManager do JAR expõe flushWithData() público")
+    @DisplayName("ODMMetricsManager do JAR expõe flush() público")
     void jar_odmMetricsManagerHasRequiredMethods() throws Exception {
         Class<?> mgr = jarLoader.loadClass(
                 "br.com.itau.odm.embarcado.ODMMetricsManager");
 
-        // Verificar método flushWithData público e estático
-        Method flushWithData = mgr.getMethod("flushWithData",
-                String.class, String.class, String.class,
+        // Verificar método flush público e estático
+        Method flush = mgr.getMethod("flush",
                 long.class, long.class, long.class, long.class,
-                long.class, String.class, long.class, long.class);
-        assertNotNull(flushWithData, "ODMMetricsManager.flushWithData() deve ser público");
-        System.out.println("\n   ✅ ODMMetricsManager.flushWithData() — presente");
+                String.class, long.class, long.class);
+        assertNotNull(flush, "ODMMetricsManager.flush() deve ser público");
+        System.out.println("\n   ✅ ODMMetricsManager.flush() — presente");
 
-        // flushWithData() com bucket null deve lançar IllegalArgumentException
+        // flush() sem S3_METRICS_BUCKET deve lançar IllegalArgumentException
         java.lang.reflect.InvocationTargetException ex = assertThrows(
                 java.lang.reflect.InvocationTargetException.class,
-                () -> flushWithData.invoke(null,
-                        null, "prefix", "us-east-1",
-                        100L, 99L, 1L, 5000L, 0L, "/test/1.0/r",
+                () -> flush.invoke(null,
+                        100L, 99L, 1L, 5000L, "/test/1.0/r",
                         System.currentTimeMillis() - 1000, System.currentTimeMillis()),
-                "flushWithData() com bucket null deve lançar IllegalArgumentException");
+                "flush() sem S3_METRICS_BUCKET deve lançar IllegalArgumentException");
         assertInstanceOf(IllegalArgumentException.class, ex.getCause(),
                 "Causa deve ser IllegalArgumentException");
-        System.out.println("   ✅ flushWithData(null bucket) — lança IllegalArgumentException corretamente");
+        System.out.println("   ✅ flush() sem S3_METRICS_BUCKET — lança IllegalArgumentException");
 
-        // flushWithData() com totalCount=0 não deve lançar exceção
-        assertDoesNotThrow(() -> flushWithData.invoke(null,
-                "meu-bucket", "odm-metrics", "sa-east-1",
-                0L, 0L, 0L, 0L, 0L, "/test/1.0/r",
-                System.currentTimeMillis(), System.currentTimeMillis()));
-        System.out.println("   ✅ flushWithData(totalCount=0) — retorna sem tentar S3");
+        // flush() com totalCount=0 e bucket configurado não deve lançar exceção
+        setEnvVar("S3_METRICS_BUCKET", "meu-bucket");
+        try {
+            assertDoesNotThrow(() -> flush.invoke(null,
+                    0L, 0L, 0L, 0L, "/test/1.0/r",
+                    System.currentTimeMillis(), System.currentTimeMillis()));
+            System.out.println("   ✅ flush(totalCount=0) — retorna sem tentar S3");
+        } finally {
+            clearEnvVar("S3_METRICS_BUCKET");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void setEnvVar(String name, String value) throws Exception {
+        Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
+        java.lang.reflect.Field theEnv = pe.getDeclaredField("theEnvironment");
+        theEnv.setAccessible(true);
+        ((java.util.Map<Object, Object>) theEnv.get(null))
+                .put(envKey(name), envVal(value));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void clearEnvVar(String name) throws Exception {
+        Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
+        java.lang.reflect.Field theEnv = pe.getDeclaredField("theEnvironment");
+        theEnv.setAccessible(true);
+        ((java.util.Map<Object, Object>) theEnv.get(null)).remove(envKey(name));
+    }
+
+    private static Object envKey(String s) throws Exception {
+        Class<?> c = Class.forName("java.lang.ProcessEnvironment$Variable");
+        java.lang.reflect.Method m = c.getDeclaredMethod("valueOf", String.class);
+        m.setAccessible(true);
+        return m.invoke(null, s);
+    }
+
+    private static Object envVal(String s) throws Exception {
+        Class<?> c = Class.forName("java.lang.ProcessEnvironment$Value");
+        java.lang.reflect.Method m = c.getDeclaredMethod("valueOf", String.class);
+        m.setAccessible(true);
+        return m.invoke(null, s);
     }
 }
