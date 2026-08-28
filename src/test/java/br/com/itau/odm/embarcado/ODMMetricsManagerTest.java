@@ -31,21 +31,21 @@ class ODMMetricsManagerTest {
     @DisplayName("init() com bucket null lança IllegalArgumentException")
     void init_nullBucket_throws() {
         assertThrows(IllegalArgumentException.class, () ->
-            ODMMetricsManager.init(null, "prefix", "us-east-1"));
+            ODMMetricsManager.init(null, null, "prefix", "us-east-1"));
     }
 
     @Test
     @DisplayName("init() com bucket vazio lança IllegalArgumentException")
     void init_emptyBucket_throws() {
         assertThrows(IllegalArgumentException.class, () ->
-            ODMMetricsManager.init("  ", "prefix", "us-east-1"));
+            ODMMetricsManager.init(null, "  ", "prefix", "us-east-1"));
     }
 
     @Test
-    @DisplayName("init() válido não lança exceção")
-    void init_valid_doesNotThrow() {
-        assertDoesNotThrow(() ->
-            ODMMetricsManager.init("meu-bucket", "odm-metrics", "sa-east-1"));
+    @DisplayName("init() com SparkContext null lança IllegalArgumentException")
+    void init_nullSc_throws() {
+        assertThrows(IllegalArgumentException.class, () ->
+            ODMMetricsManager.init(null, "meu-bucket", "prefix", "us-east-1"));
     }
 
     // -------------------------------------------------------------------------
@@ -69,8 +69,9 @@ class ODMMetricsManagerTest {
 
     @Test
     @DisplayName("flush() com totalCount=0 não lança exceção e não tenta S3")
-    void flush_zeroCount_doesNotThrow() {
-        ODMMetricsManager.init("meu-bucket", "odm-metrics", "sa-east-1");
+    void flush_zeroCount_doesNotThrow() throws Exception {
+        // Simular init() sem SparkContext: setar s3Bucket diretamente
+        setField("s3Bucket", "meu-bucket");
         assertDoesNotThrow(() ->
             ODMMetricsManager.flush(
                 0L, 0L, 0L, 0L, "/my/ruleset/1.0/test",

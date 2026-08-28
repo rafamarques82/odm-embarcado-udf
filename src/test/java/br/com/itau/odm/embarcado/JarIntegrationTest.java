@@ -328,7 +328,9 @@ class JarIntegrationTest {
                 "br.com.itau.odm.embarcado.ODMMetricsManager");
 
         // Verificar init() e flush() públicos
-        Method init  = mgr.getMethod("init", String.class, String.class, String.class);
+        Method init  = mgr.getMethod("init",
+                org.apache.spark.SparkContext.class,
+                String.class, String.class, String.class);
         Method flush = mgr.getMethod("flush",
                 long.class, long.class, long.class, long.class,
                 String.class, long.class, long.class);
@@ -337,16 +339,15 @@ class JarIntegrationTest {
         System.out.println("\n   ✅ ODMMetricsManager.init()  — presente");
         System.out.println("   ✅ ODMMetricsManager.flush() — presente");
 
-        // init() com bucket null deve lançar IllegalArgumentException
+        // init() com bucket null deve lançar IllegalArgumentException (sc=null também lança)
         java.lang.reflect.InvocationTargetException ex = assertThrows(
                 java.lang.reflect.InvocationTargetException.class,
-                () -> init.invoke(null, null, "prefix", "us-east-1"),
+                () -> init.invoke(null, null, null, "prefix", "us-east-1"),
                 "init() com bucket null deve lançar IllegalArgumentException");
         assertInstanceOf(IllegalArgumentException.class, ex.getCause());
         System.out.println("   ✅ init(null bucket) — lança IllegalArgumentException");
 
         // flush() sem init() deve lançar IllegalStateException
-        // (resetar s3Bucket via reflection para garantir estado limpo)
         java.lang.reflect.Field s3BucketField = mgr.getDeclaredField("s3Bucket");
         s3BucketField.setAccessible(true);
         s3BucketField.set(null, null);
@@ -357,13 +358,12 @@ class JarIntegrationTest {
         assertInstanceOf(IllegalStateException.class, ex2.getCause());
         System.out.println("   ✅ flush() sem init() — lança IllegalStateException");
 
-        // init() + flush(totalCount=0) não deve lançar exceção
-        init.invoke(null, "meu-bucket", "odm-metrics", "sa-east-1");
+        // flush(totalCount=0) com s3Bucket setado não deve lançar exceção
+        s3BucketField.set(null, "meu-bucket");
         assertDoesNotThrow(() -> flush.invoke(null,
                 0L, 0L, 0L, 0L, "/test/1.0/r",
                 System.currentTimeMillis(), System.currentTimeMillis()));
-        System.out.println("   ✅ init() + flush(totalCount=0) — retorna sem tentar S3");
-        // limpar estado
+        System.out.println("   ✅ flush(totalCount=0) — retorna sem tentar S3");
         s3BucketField.set(null, null);
     }
 }

@@ -1,17 +1,28 @@
 package br.com.itau.odm.embarcado;
 
+import org.apache.spark.SparkContext;
+import org.apache.spark.api.java.JavaSparkContext;
+
+import java.util.Arrays;
+
 /**
  * ODMMetricsManager — envia relatórios ILMT + custom para S3.
  *
  * Uso no driver (2 passos):
  *
- *   1. No início do job (valida e aborta se não configurado):
- *      ODMMetricsManager.init(bucket, prefix, region);
+ *   1. No início do job (valida, armazena e propaga para executores):
+ *      ODMMetricsManager.init(sc, bucket, prefix, region);
  *
- *   2. No fim do job (envia os relatórios):
+ *   2. No fim do job (envia os relatórios — lança exceção se init() não foi chamado):
  *      ODMMetricsManager.flush(total, ok, errors, durationMs, ruleset, startMs, endMs);
+ *
+ * A UDF (GenericODMUDF) verifica a System Property "odm.metrics.initialized" em cada
+ * executor — lança IllegalStateException no primeiro registro se init() não foi chamado.
  */
 public final class ODMMetricsManager {
+
+    /** Nome da System Property propagada para os executores via task de inicialização. */
+    static final String PROP_INITIALIZED = "odm.metrics.initialized";
 
     private static volatile String s3Bucket = null;
     private static volatile String s3Prefix = "odm-metrics";
@@ -20,25 +31,38 @@ public final class ODMMetricsManager {
     private ODMMetricsManager() {}
 
     /**
-     * Valida e armazena a configuração S3.
-     * Deve ser chamado NO INÍCIO do job — aborta imediatamente se bucket inválido.
+     * Valida as configs S3, armazena no driver e propaga para todos os executores
+     * via uma task Spark (System Property "odm.metrics.initialized").
      *
+     * Aborta imediatamente se bucket for inválido — antes de qualquer processamento.
+     *
+     * @param sc      SparkContext do job
      * @param bucket  Bucket S3 de destino (obrigatório)
      * @param prefix  Prefixo/pasta no bucket (opcional, default: "odm-metrics")
      * @param region  Região AWS (opcional, default: "us-east-1")
      */
-    public static synchronized void init(String bucket, String prefix, String region) {
+    public static synchronized void init(SparkContext sc, String bucket, String prefix, String region) {
         if (bucket == null || bucket.trim().isEmpty()) {
             throw new IllegalArgumentException(
                 "[ODMMetricsManager] ERRO: 'bucket' é obrigatório.\n" +
                 "Configure o job parameter --S3_METRICS_BUCKET no Glue Job."
             );
         }
+        if (sc == null) {
+            throw new IllegalArgumentException("[ODMMetricsManager] ERRO: SparkContext não pode ser null.");
+        }
+
         s3Bucket = bucket.trim();
         s3Prefix = (prefix != null && !prefix.trim().isEmpty()) ? prefix.trim() : "odm-metrics";
         s3Region = (region != null && !region.trim().isEmpty()) ? region.trim() : "us-east-1";
 
-        System.out.println("[ODMMetricsManager] Configurado.");
+        // Propagar para todos os executores via task Spark
+        int numPartitions = sc.defaultParallelism();
+        JavaSparkContext jsc = JavaSparkContext.fromSparkContext(sc);
+        jsc.parallelize(Arrays.asList(new Integer[numPartitions]), numPartitions)
+           .foreachPartition(it -> System.setProperty(PROP_INITIALIZED, "true"));
+
+        System.out.println("[ODMMetricsManager] Configurado e propagado para " + numPartitions + " partições.");
         System.out.println("[ODMMetricsManager]   Bucket: " + s3Bucket);
         System.out.println("[ODMMetricsManager]   Prefix: " + s3Prefix);
         System.out.println("[ODMMetricsManager]   Region: " + s3Region);

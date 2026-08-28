@@ -176,9 +176,10 @@ spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
 
-# Inicializar ODMMetricsManager — valida bucket e armazena configs na JVM
+# Inicializar ODMMetricsManager — valida bucket, armazena configs e propaga para executores
 jvm = spark.sparkContext._jvm
 jvm.br.com.itau.odm.embarcado.ODMMetricsManager.init(
+    spark.sparkContext._jsc.sc(),
     args['S3_METRICS_BUCKET'], args['S3_METRICS_PREFIX'], args['S3_METRICS_REGION']
 )
 

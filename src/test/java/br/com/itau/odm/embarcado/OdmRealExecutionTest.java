@@ -73,6 +73,11 @@ class OdmRealExecutionTest {
                 xomDir.toUri().toURL()
         }, ClassLoader.getSystemClassLoader());
 
+        // Setar System Property que a UDF verifica para garantir que init() foi chamado
+        Class<?> mgrClass = loader.loadClass("br.com.itau.odm.embarcado.ODMMetricsManager");
+        String propName = (String) mgrClass.getDeclaredField("PROP_INITIALIZED").get(null);
+        System.setProperty(propName, "true");
+
         // Instanciar acumulador e injetar na UDF via campo estático
         accClass  = loader.loadClass("br.com.itau.odm.embarcado.S3MetricsAccumulator");
         dataClass = loader.loadClass("br.com.itau.odm.embarcado.S3MetricsAccumulator$MetricsData");
