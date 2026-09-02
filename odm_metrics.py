@@ -42,8 +42,10 @@ def _init():
     _start_ms = int(time.time() * 1000)
 
     if not _bucket:
-        print("[odm_metrics] AVISO: S3_METRICS_BUCKET não configurado — métricas desabilitadas.")
-        return
+        raise ValueError(
+            "[odm_metrics] ERRO: parâmetro --S3_METRICS_BUCKET não configurado.\n"
+            "Configure o Job Parameter no Glue Job antes de executar."
+        )
 
     # Registrar atexit — dispara automaticamente quando o processo Python termina
     atexit.register(_flush_on_exit)
