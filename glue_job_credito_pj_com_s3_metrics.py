@@ -26,6 +26,7 @@ import os
 import json
 import time
 from datetime import datetime
+import odm_metrics
 import boto3
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
@@ -102,22 +103,6 @@ args = getResolvedOptions(sys.argv, [
     'S3_METRICS_REGION',
 ])
 
-# =============================================================================
-# 📊 CONFIGURAR S3 METRICS — valida imediatamente, aborta se não configurado
-# =============================================================================
-
-# getResolvedOptions já lança exceção se o parâmetro não existir.
-# Esta checagem adicional protege contra valor vazio.
-if not args.get('S3_METRICS_BUCKET'):
-    raise ValueError("Parâmetro --S3_METRICS_BUCKET é obrigatório.")
-
-print("=" * 80)
-print("📊 S3 METRICS CONFIGURADO")
-print("=" * 80)
-print(f"  Bucket: {args['S3_METRICS_BUCKET']}")
-print(f"  Prefix: {args['S3_METRICS_PREFIX']}")
-print(f"  Region: {args['S3_METRICS_REGION']}")
-print("=" * 80)
 print("🚀 AWS GLUE JOB - Crédito PJ (Full Tuning + S3 Metrics)")
 print("=" * 80)
 print(f"Job Name: {args['JOB_NAME']}")
@@ -176,12 +161,8 @@ spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
 
-# Inicializar ODMMetricsManager — valida bucket, armazena configs e propaga para executores
-jvm = spark.sparkContext._jvm
-jvm.br.com.itau.odm.embarcado.ODMMetricsManager.init(
-    spark.sparkContext._jsc.sc(),
-    args['S3_METRICS_BUCKET'], args['S3_METRICS_PREFIX'], args['S3_METRICS_REGION']
-)
+# Injetar SparkSession no módulo de métricas
+odm_metrics.set_spark(spark, RULESET_PATH)
 
 # --- Aplicar tunings via SparkContext (runtime) ---
 jvm = spark.sparkContext._jvm
@@ -497,22 +478,16 @@ else:
 df_result.unpersist()
 
 # =============================================================================
-# 📊 ENVIAR RELATÓRIO ILMT PARA S3
+# 📊 ENVIAR MÉTRICAS ILMT PARA S3
 # =============================================================================
 
-jvm.br.com.itau.odm.embarcado.ODMMetricsManager.flush(
-    int(total_processed), int(success), int(errors),
-    int(elapsed_time * 1000), RULESET_PATH,
-    int(start_time * 1000), int(time.time() * 1000),
-)
-
-
+odm_metrics.flush(df_result, total_processed, success, errors, elapsed_time, start_time)
 
 # =============================================================================
 # ✅ FINALIZAR JOB
 # =============================================================================
 
-jvm.br.com.itau.odm.embarcado.ODMMetricsManager.flushRequired()
+odm_metrics.require_flush()
 job.commit()
 
 print("\n" + "=" * 80)
