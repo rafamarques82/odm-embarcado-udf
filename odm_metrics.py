@@ -105,7 +105,12 @@ def flush(df_result, total_processed, success, errors, elapsed_time_s, start_tim
     # 2. XML ILMT oficial (via JAR IBM — se JVM disponível)
     if _jvm is not None:
         try:
-            _jvm.br.com.itau.odm.embarcado.ODMMetricsManager.flush(
+            mgr = _jvm.br.com.itau.odm.embarcado.ODMMetricsManager
+            mgr.init(
+                _spark.sparkContext._jsc.sc(),
+                _bucket, _prefix, _region
+            )
+            mgr.flush(
                 int(total_processed), int(success), int(errors),
                 dur_ms, _ruleset or "(unknown)",
                 start_ms, end_ms
