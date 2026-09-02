@@ -481,7 +481,7 @@ df_result.unpersist()
 # 📊 ENVIAR MÉTRICAS ILMT PARA S3
 # =============================================================================
 
-odm_metrics.flush(df_result, total_processed, success, errors, elapsed_time, start_time)
+odm_metrics.flush(None, total_processed, success, errors, elapsed_time, start_time)
 
 # =============================================================================
 # ✅ FINALIZAR JOB

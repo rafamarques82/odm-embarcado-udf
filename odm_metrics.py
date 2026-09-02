@@ -85,9 +85,8 @@ def set_spark(spark_session, ruleset_path):
 def flush(df_result, total_processed, success, errors, elapsed_time_s, start_time_epoch):
     """
     Envia os relatórios de métricas para o S3.
-    Chamado automaticamente pelo atexit — mas pode ser chamado manualmente.
-
-    Parâmetros correspondem ao que já existe no script após o processamento.
+    df_result não é utilizado — pode passar None.
+    Os demais parâmetros correspondem ao que já existe no script após o processamento.
     """
     global _flushed
 
