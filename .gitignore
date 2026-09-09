@@ -37,3 +37,6 @@ secrets/
 .env
 *.jar
 dependency-reduced-pom.xml
+
+!releases/*.jar
+!odm-embarcado-udf-95/releases/*.jar
