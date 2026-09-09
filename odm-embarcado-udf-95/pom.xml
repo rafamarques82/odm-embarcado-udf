@@ -149,6 +149,40 @@
                 </configuration>
             </plugin>
 
+            <!-- Maven AntRun Plugin - Descompacta JARs do ODM 9.5 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>unpack-odm-jars</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <echo message="Descompactando JARs do ODM 9.5..."/>
+                                <unzip src="${project.basedir}/lib/jrules-engine.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <unzip src="${project.basedir}/lib/jrules-res-9.5.0.1-execution.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <unzip src="${project.basedir}/lib/jrules-res-9.5.0.1-session-java.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <unzip src="${project.basedir}/lib/license_metric_logger_2.1.2.202009181115.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <echo message="JARs do ODM 9.5 descompactados com sucesso!"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- Maven Shade Plugin — fat JAR -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
