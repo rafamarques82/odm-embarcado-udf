@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>br.com.itau.odm</groupId>
+    <artifactId>odm-embarcado-server-21</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>ODM Embarcado - Servidor Standalone (Java 21)</name>
+    <description>
+        Processo standalone Java 21, isolado da JVM do Spark/Glue (que roda em Java 8/17).
+        Hospeda o XU do ODM 9.5 (via FacadeSessionFactory, reaproveitada de embarcado-95.jar)
+        e atende requisições de execução de regras por socket TCP local, para permitir que
+        rulesets/XOM que exigem classfile Java 21 continuem rodando sem "marretar" o bytecode
+        deles para um target inferior (o que tiraria o artefato do suporte oficial).
+    </description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>21</maven.compiler.release>
+        <gson.version>2.10.1</gson.version>
+        <odm.version>9.5.0.1</odm.version>
+        <!-- Ajuste para o caminho onde o projeto da UDF (embarcado-95) está no mesmo repo -->
+        <udf95.dir>${project.basedir}/../odm-embarcado-udf-95</udf95.dir>
+        <!-- Pasta onde ficam os jars ODM 9.5 no repositório -->
+        <odm95.dir>${project.basedir}/../lib/95</odm95.dir>
+    </properties>
+
+    <dependencies>
+        <!-- Reaproveita FacadeSessionFactory / FacadeStatelessSession / KafkaMetrics
+             já compiladas no módulo da UDF (Java 8 bytecode roda normalmente em JVM 21) -->
+        <dependency>
+            <groupId>br.com.itau.odm</groupId>
+            <artifactId>embarcado-95</artifactId>
+            <version>1.0.0</version>
+            <scope>system</scope>
+            <systemPath>${udf95.dir}/target/embarcado-95-1.0.0.jar</systemPath>
+        </dependency>
+
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>${gson.version}</version>
+        </dependency>
+
+        <!-- IBM ODM 9.5 — mesmos jars usados pela UDF -->
+        <dependency>
+            <groupId>com.ibm.rules</groupId>
+            <artifactId>jrules-engine</artifactId>
+            <version>${odm.version}</version>
+            <scope>system</scope>
+            <systemPath>${odm95.dir}/jrules-engine.jar</systemPath>
+        </dependency>
+        <dependency>
+            <groupId>com.ibm.rules</groupId>
+            <artifactId>jrules-res-execution</artifactId>
+            <version>${odm.version}</version>
+            <scope>system</scope>
+            <systemPath>${odm95.dir}/jrules-res-9.5.0.1-execution.jar</systemPath>
+        </dependency>
+        <dependency>
+            <groupId>com.ibm.rules</groupId>
+            <artifactId>jrules-res-session</artifactId>
+            <version>${odm.version}</version>
+            <scope>system</scope>
+            <systemPath>${odm95.dir}/jrules-res-9.5.0.1-session-java.jar</systemPath>
+        </dependency>
+        <dependency>
+            <groupId>com.ibm.license</groupId>
+            <artifactId>license-metric-logger</artifactId>
+            <version>2.1.2</version>
+            <scope>system</scope>
+            <systemPath>${udf95.dir}/lib/license_metric_logger_2.1.2.202009181115.jar</systemPath>
+        </dependency>
+
+        <dependency>
+            <groupId>jakarta.resource</groupId>
+            <artifactId>jakarta.resource-api</artifactId>
+            <version>2.1.0</version>
+        </dependency>
+
+        <!-- Ruleset + XOM opcionais (se colocados em lib/) -->
+        <!-- Caso existam localmente em lib/, são incluídos no classpath -->
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>21</release>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+
+            <!-- Maven AntRun Plugin - Descompacta JARs proprietários IBM e classes da UDF diretamente no Fat JAR -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>unpack-odm-jars</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <echo message="Descompactando JARs ODM 9.5 originais (Java 21) e classes da UDF..."/>
+                                <unzip src="${odm95.dir}/jrules-engine.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <unzip src="${odm95.dir}/jrules-res-9.5.0.1-execution.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <unzip src="${odm95.dir}/jrules-res-9.5.0.1-session-java.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <unzip src="${odm95.dir}/guicustomization-1.0.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <unzip src="${udf95.dir}/lib/license_metric_logger_2.1.2.202009181115.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <unzip src="${udf95.dir}/target/embarcado-95-1.0.0.jar"
+                                       dest="${project.build.directory}/classes"
+                                       overwrite="true"/>
+                                <echo message="JARs embutidos com sucesso!"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Fat JAR: o processo standalone precisa subir sozinho, sem depender
+                 de um classpath externo montado na mão -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <shadedArtifactAttached>false</shadedArtifactAttached>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>br.com.itau.odm.embarcado.server.OdmServer</mainClass>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

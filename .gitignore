@@ -40,3 +40,4 @@ dependency-reduced-pom.xml
 
 !releases/*.jar
 !odm-embarcado-udf-95/releases/*.jar
+!odm-embarcado-server-21/releases/*
