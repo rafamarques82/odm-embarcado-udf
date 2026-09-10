@@ -166,24 +166,25 @@ class _OdmConnection:
 
     def _connect(self):
         _ensure_server_running()
-        self._sock = socket.create_connection(("127.0.0.1", SERVER_PORT), timeout=30)
-        self._reader = self._sock.makefile("r", encoding="utf-8")
+        self._sock = socket.create_connection(("127.0.0.1", SERVER_PORT), timeout=60)
+        self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self._reader = self._sock.makefile("r", encoding="utf-8", buffering=65536)
 
     def call(self, payload: str) -> str:
         for attempt in (1, 2):
             try:
                 if self._sock is None:
                     self._connect()
-                self._sock.sendall((payload + "\n").encode("utf-8"))
+                msg = (payload + "\n").encode("utf-8")
+                self._sock.sendall(msg)
                 line = self._reader.readline()
                 if not line:
                     raise ConnectionError("Servidor fechou a conexão sem responder")
-                return line.rstrip("\n")
+                return line.rstrip("\r\n")
             except (OSError, ConnectionError):
                 self.close()
                 if attempt == 2:
                     raise
-                # segunda tentativa: reconecta (o servidor pode ter reiniciado)
 
     def close(self):
         try:
@@ -195,34 +196,42 @@ class _OdmConnection:
         self._reader = None
 
 
-def _process_partition(rows):
-    """Roda uma vez por partição no executor. Mantém UMA conexão TCP viva
-    para todos os registros da partição."""
-    conn = _OdmConnection()
-    try:
-        for row in rows:
-            row_dict = row.asDict()
-            odm_input = row_dict["odm_input"]
-            try:
-                odm_output = conn.call(odm_input)
-            except Exception as e:
-                odm_output = json.dumps({
-                    "error": str(e),
-                    "errorType": type(e).__name__,
-                })
-            yield Row(record_id=row_dict["record_id"], odm_output=odm_output)
-    finally:
-        conn.close()
+def _process_partition_direct(job_name):
+    def _partition_fn(rows):
+        import datetime
+        conn = _OdmConnection()
+        try:
+            for row in rows:
+                row_dict = row.asDict()
+                odm_input = row_dict["odm_input"]
+                try:
+                    odm_output = conn.call(odm_input)
+                except Exception as e:
+                    odm_output = json.dumps({
+                        "error": str(e),
+                        "errorType": type(e).__name__,
+                    })
+                yield Row(
+                    record_id=row_dict["record_id"],
+                    odm_input=odm_input,
+                    odm_output=odm_output,
+                    processing_timestamp=datetime.datetime.now(),
+                    job_name=job_name
+                )
+        finally:
+            conn.close()
+    return _partition_fn
 
 
-def call_odm_via_subprocess(df_with_input, spark):
-    """Substitui `df.withColumn("odm_output", expr("execute_odm(odm_input)"))`.
-
-    Espera um DataFrame com colunas (record_id, odm_input) — igual ao que o
-    script Glue já monta hoje antes de chamar a UDF Java. Retorna um
-    DataFrame com (record_id, odm_output)."""
+def call_odm_via_subprocess(df_with_input, spark, job_name="glue_job"):
+    """Transforma diretamente sem necessitar de JOIN (elimina shuffle de rede)."""
+    from pyspark.sql.types import TimestampType
+    
     result_schema = StructType([
         StructField("record_id", df_with_input.schema["record_id"].dataType, False),
+        StructField("odm_input", StringType(), True),
         StructField("odm_output", StringType(), True),
+        StructField("processing_timestamp", TimestampType(), True),
+        StructField("job_name", StringType(), True),
     ])
-    return df_with_input.rdd.mapPartitions(_process_partition).toDF(result_schema)
+    return df_with_input.rdd.mapPartitions(_process_partition_direct(job_name)).toDF(result_schema)
