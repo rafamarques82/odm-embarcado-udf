@@ -40,7 +40,9 @@ from pyspark.sql.types import StructType, StructField, StringType
 # =============================================================================
 
 JDK21_TARBALL_S3 = "s3://bre-laboratorio/embarcado/runtime/amazon-corretto-21-x64-linux-jdk.tar.gz"
-ODM_SERVER_JAR_S3 = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/odm-embarcado-server-21.jar"
+ODM_SERVER_JAR_S3 = "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar"
+RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
+XOM_JAR_LOCAL = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
 
 # Diretório local no executor (mesmo filesystem efêmero usado hoje para os jars)
 LOCAL_BASE = "/tmp/odm-server-21"
@@ -133,9 +135,27 @@ def _ensure_server_running():
             os.remove(READY_FILE)
 
         log_fh = open(LOG_FILE, "a")
+        
+        # Constrói o classpath incluindo o Server JAR, o Ruleset JAR e o XOM JAR
+        cp_elements = [server_jar]
+        if os.path.exists(RULESET_JAR_LOCAL):
+            cp_elements.append(RULESET_JAR_LOCAL)
+        if os.path.exists(XOM_JAR_LOCAL):
+            cp_elements.append(XOM_JAR_LOCAL)
+        classpath = ":".join(cp_elements)
+
         subprocess.Popen(
-            [java_bin, "-Xms512m", "-Xmx2g", "-jar", server_jar,
-             str(SERVER_PORT), READY_FILE, str(IDLE_TIMEOUT_S)],
+            [
+                java_bin,
+                "-Xms1g",
+                "-Xmx4g",
+                "-XX:+UseG1GC",
+                "-Dilog.rules.res.xu.maxCacheSize=10",
+                "-Dilog.rules.res.xu.forceUptodate=false",
+                "-cp", classpath,
+                "br.com.itau.odm.embarcado.server.OdmServer",
+                str(SERVER_PORT), READY_FILE, str(IDLE_TIMEOUT_S)
+            ],
             stdout=log_fh,
             stderr=subprocess.STDOUT,
             start_new_session=True,  # sobrevive independente do ciclo de vida da task Python

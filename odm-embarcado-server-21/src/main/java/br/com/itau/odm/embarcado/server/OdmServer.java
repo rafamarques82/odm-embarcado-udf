@@ -188,7 +188,7 @@ public class OdmServer {
 
             IlrSessionRequest request = sessionFactory.createRequest();
             request.setRulesetPath(IlrPath.parsePath(rulesetPath));
-            request.setForceUptodate(true);
+            request.setForceUptodate(false);
 
             Map<String, Object> inputParams = new HashMap<>();
             inputParams.put(inputParamName, inputObject);
