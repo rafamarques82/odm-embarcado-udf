@@ -34,7 +34,23 @@ from odm_subprocess_client import call_odm_via_subprocess
 import boto3
 
 
-def inspecionar_metadados_odm(ruleset_jar_path, spark_jvm=None, udf_jar_path=None):
+def _obter_zipfile(caminho_ou_s3, s3_client=None):
+    """Abre um ZipFile a partir de um path local (/tmp/...) ou URI do S3 (s3://...)."""
+    if not caminho_ou_s3:
+        return None
+    if caminho_ou_s3.startswith("s3://"):
+        if not s3_client:
+            s3_client = boto3.client("s3", region_name=S3_REGION)
+        bucket, key = caminho_ou_s3.replace("s3://", "").split("/", 1)
+        # Lê apenas os primeiros 10MB ou o arquivo todo em memória se for menor
+        obj = s3_client.get_object(Bucket=bucket, Key=key)
+        return zipfile.ZipFile(io.BytesIO(obj["Body"].read()))
+    elif os.path.exists(caminho_ou_s3):
+        return zipfile.ZipFile(caminho_ou_s3, "r")
+    return None
+
+
+def inspecionar_metadados_odm(ruleset_jar_path, spark_jvm=None, udf_jar_path=None, s3_client=None):
     print("\n" + "=" * 80)
     print("🔍 INFORMAÇÕES DE VERSÃO — ODM, UDF & RULESET")
     print("=" * 80)
@@ -49,15 +65,17 @@ def inspecionar_metadados_odm(ruleset_jar_path, spark_jvm=None, udf_jar_path=Non
         except Exception:
             pass
 
-    # 2. Inspecionar versão Java da UDF / Server JAR
+    # 2. Inspecionar versão Java da UDF / Server JAR (aceita s3:// ou local)
     v_map = {52: "Java 8", 55: "Java 11", 61: "Java 17", 65: "Java 21"}
-    if udf_jar_path and os.path.exists(udf_jar_path):
+    if udf_jar_path:
         try:
-            with zipfile.ZipFile(udf_jar_path, "r") as uz:
+            uz = _obter_zipfile(udf_jar_path, s3_client)
+            if uz:
                 for c in uz.namelist():
                     if (c.endswith("GenericODMUDF.class") or c.endswith("OdmServer.class")) and not c.endswith("module-info.class"):
                         major = uz.read(c)[7]
-                        print(f"  ☕ Versão Java do UDF/Server JAR:   {v_map.get(major, f'Bytecode {major}')} ({os.path.basename(udf_jar_path)})")
+                        jar_name = udf_jar_path.split("/")[-1]
+                        print(f"  ☕ Versão Java do UDF/Server JAR:   {v_map.get(major, f'Bytecode {major}')} ({jar_name})")
                         break
         except Exception as e:
             print(f"  ⚠️ Não foi possível ler versão do UDF JAR: {e}")
@@ -239,8 +257,13 @@ sc = SparkContext()
 glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 
-# Inspecionar versões do ODM, Ruleset e UDF
-inspecionar_metadados_odm(RULESET_JAR_LOCAL, spark.sparkContext._jvm, "/tmp/odm-server-21/odm-embarcado-server-21.jar")
+# Inspecionar versões do ODM, Ruleset e UDF (lendo direto do S3 ou local)
+inspecionar_metadados_odm(
+    ruleset_jar_path=RULESET_JAR_LOCAL,
+    spark_jvm=spark.sparkContext._jvm,
+    udf_jar_path="s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar",
+    s3_client=s3_client
+)
 
 # =============================================================================
 # ✅ INICIALIZAR JOB
