@@ -81,6 +81,18 @@ def set_spark(spark_session, ruleset_path):
     _jvm     = spark_session.sparkContext._jvm
     _ruleset = ruleset_path
 
+    # Inicializa o ODMMetricsManager Java antecipadamente se o JAR estiver no classpath
+    if _jvm is not None and _bucket:
+        try:
+            mgr = _jvm.br.com.itau.odm.embarcado.ODMMetricsManager
+            mgr.init(
+                _spark.sparkContext._jsc.sc(),
+                _bucket, _prefix, _region
+            )
+        except Exception as e:
+            # Não é fatal se a classe Java não estiver presente
+            pass
+
 
 def flush(df_result, total_processed, success, errors, elapsed_time_s, start_time_epoch):
     """
@@ -106,10 +118,14 @@ def flush(df_result, total_processed, success, errors, elapsed_time_s, start_tim
     if _jvm is not None:
         try:
             mgr = _jvm.br.com.itau.odm.embarcado.ODMMetricsManager
-            mgr.init(
-                _spark.sparkContext._jsc.sc(),
-                _bucket, _prefix, _region
-            )
+            try:
+                mgr.init(
+                    _spark.sparkContext._jsc.sc(),
+                    _bucket, _prefix, _region
+                )
+            except Exception:
+                pass
+
             mgr.flush(
                 int(total_processed), int(success), int(errors),
                 dur_ms, _ruleset or "(unknown)",
