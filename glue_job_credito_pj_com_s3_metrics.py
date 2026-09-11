@@ -29,8 +29,6 @@ import os
 import json
 import time
 from datetime import datetime
-import odm_metrics
-from odm_subprocess_client import call_odm_via_subprocess, ODM_SERVER_JAR_S3, SERVER_JAR_LOCAL as SERVER_JAR_LOCAL
 import boto3
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
@@ -56,6 +54,7 @@ RULESET_JAR_S3    = "s3://bre-laboratorio/embarcado/bre_visaodorelacionamentoban
 RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
 XOM_JAR_S3        = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
 XOM_PATH_LOCAL    = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
+ODM_SERVER_JAR_S3 = "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar"
 
 # --- ODM ---
 RULESET_PATH = "/bre_visaodorelacionamentobancario/1.0/elege_faturamento"
@@ -99,6 +98,12 @@ XU_COMPILATION_THREADS = 20   # Threads para compilar regras
 # =============================================================================
 # 🚀 INÍCIO
 # =============================================================================
+
+# Injetar ODM_SERVER_JAR_S3 para o odm_subprocess_client antes do import
+os.environ["ODM_SERVER_JAR_S3"] = ODM_SERVER_JAR_S3
+
+import odm_metrics
+from odm_subprocess_client import call_odm_via_subprocess, SERVER_JAR_LOCAL
 
 args = getResolvedOptions(sys.argv, [
     'JOB_NAME',

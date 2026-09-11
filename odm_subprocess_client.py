@@ -39,8 +39,9 @@ from pyspark.sql.types import StructType, StructField, StringType
 # CONFIGURAÇÃO — ajuste para os seus paths reais no S3
 # =============================================================================
 
-JDK21_TARBALL_S3 = "s3://bre-laboratorio/embarcado/runtime/amazon-corretto-21-x64-linux-jdk.tar.gz"
-ODM_SERVER_JAR_S3 = "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar"
+JDK21_TARBALL_S3  = "s3://bre-laboratorio/embarcado/runtime/amazon-corretto-21-x64-linux-jdk.tar.gz"
+ODM_SERVER_JAR_S3 = os.environ.get("ODM_SERVER_JAR_S3",
+                        "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar")
 RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
 XOM_JAR_LOCAL = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
 
