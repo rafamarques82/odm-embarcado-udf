@@ -101,8 +101,8 @@ def _opt(name, default):
     except Exception:
         return default
 
-EXECUTOR_CORES       = int(_opt('EXECUTOR_CORES', '4'))
-PARALLELISM_OVERRIDE = int(_opt('PARALLELISM_OVERRIDE', '0'))
+EXECUTOR_CORES       = int(_opt('EXECUTOR_CORES', '16'))
+PARALLELISM_OVERRIDE = int(_opt('PARALLELISM_OVERRIDE', '40'))
 S3_MULTIPART_SIZE    = _opt('S3_MULTIPART_SIZE', '128m')
 S3_BUFFER_SIZE       = _opt('S3_BUFFER_SIZE', '65536')
 
