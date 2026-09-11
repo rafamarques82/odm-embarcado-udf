@@ -54,8 +54,10 @@ INPUT_PATH = "s3://bre-laboratorio/embarcado/input/bre-rendaeleita/cenarios_100k
 # --- JARs (S3) ---
 RULESET_JAR_S3    = "s3://bre-laboratorio/embarcado/bre_visaodorelacionamentobancario.jar"
 RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
-XOM_JAR_S3    = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
-XOM_PATH_LOCAL = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
+XOM_JAR_S3        = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
+XOM_PATH_LOCAL    = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
+SERVER_JAR_S3     = "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar"
+SERVER_JAR_LOCAL  = "/tmp/odm-embarcado-server-21-1.0.0.jar"
 
 # --- ODM ---
 RULESET_PATH = "/bre_visaodorelacionamentobancario/1.0/elege_faturamento"
@@ -129,6 +131,7 @@ t0 = time.time()
 for jar_s3, jar_local, label in [
     (RULESET_JAR_S3, RULESET_JAR_LOCAL, "Ruleset"),
     (XOM_JAR_S3,     XOM_PATH_LOCAL,    "XOM"),
+    (SERVER_JAR_S3,  SERVER_JAR_LOCAL,  "Server UDF"),
 ]:
     try:
         bucket, key = _s3_parse(jar_s3)
@@ -196,6 +199,18 @@ def inspecionar_metadados_odm(ruleset_jar_path):
                     break
     except Exception as e:
         print(f"  ⚠️ Não foi possível ler metadados do JAR: {e}")
+
+    # --- Versão Java do Server UDF JAR ---
+    try:
+        v_map = {52: "Java 8", 55: "Java 11", 61: "Java 17", 65: "Java 21"}
+        with zipfile.ZipFile(SERVER_JAR_LOCAL, "r") as z:
+            for name in z.namelist():
+                if name.endswith(".class") and not name.startswith("META-INF"):
+                    major = z.read(name)[7]
+                    print(f"  ☕ Versão Java do Server UDF: {v_map.get(major, f'Bytecode {major}')}")
+                    break
+    except Exception as e:
+        print(f"  ⚠️ Não foi possível ler versão Java do Server UDF: {e}")
 
     print("=" * 80 + "\n")
 
