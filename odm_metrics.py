@@ -81,18 +81,6 @@ def set_spark(spark_session, ruleset_path):
     _jvm     = spark_session.sparkContext._jvm
     _ruleset = ruleset_path
 
-    # Inicializa o ODMMetricsManager Java antecipadamente se o JAR estiver no classpath
-    if _jvm is not None and _bucket:
-        try:
-            mgr = _jvm.br.com.itau.odm.embarcado.ODMMetricsManager
-            mgr.init(
-                _spark.sparkContext._jsc.sc(),
-                _bucket, _prefix, _region
-            )
-        except Exception as e:
-            # Não é fatal se a classe Java não estiver presente
-            pass
-
 
 def flush(df_result, total_processed, success, errors, elapsed_time_s, start_time_epoch):
     """
@@ -114,25 +102,18 @@ def flush(df_result, total_processed, success, errors, elapsed_time_s, start_tim
     _send_custom_xml(total_processed, success, errors, dur_ms,
                      _ruleset or "(unknown)", start_ms, end_ms)
 
-    # 2. XML ILMT oficial (via JAR IBM — se JVM disponível)
+    # 2. XML ILMT oficial (via JAR IBM — se JVM disponível e classe existir)
     if _jvm is not None:
         try:
             mgr = _jvm.br.com.itau.odm.embarcado.ODMMetricsManager
-            try:
-                mgr.init(
-                    _spark.sparkContext._jsc.sc(),
-                    _bucket, _prefix, _region
-                )
-            except Exception:
-                pass
-
             mgr.flush(
                 int(total_processed), int(success), int(errors),
                 dur_ms, _ruleset or "(unknown)",
                 start_ms, end_ms
             )
         except Exception as e:
-            print(f"[odm_metrics] AVISO: erro ao enviar ILMT via JAR: {e}")
+            # Em modo Server 21 subprocess, o ILMT oficial é gerado pelo XML customizado acima
+            pass
 
 
 def require_flush():
