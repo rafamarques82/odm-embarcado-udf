@@ -23,27 +23,46 @@
         <maven.compiler.release>21</maven.compiler.release>
         <gson.version>2.10.1</gson.version>
         <odm.version>9.5.0.1</odm.version>
-        <!-- Ajuste para o caminho onde o projeto da UDF (embarcado-95) está no mesmo repo -->
+        <spark.version>3.3.0</spark.version>
+        <aws.sdk.version>1.12.529</aws.sdk.version>
         <udf95.dir>${project.basedir}/../odm-embarcado-udf-95</udf95.dir>
-        <!-- Pasta onde ficam os jars ODM 9.5 no repositório -->
+        <!-- Pasta onde ficam os jars ODM 9.5 ORIGINAIS (sem alteração) no repositório -->
         <odm95.dir>${project.basedir}/../lib/95</odm95.dir>
     </properties>
 
     <dependencies>
-        <!-- Reaproveita FacadeSessionFactory / FacadeStatelessSession / KafkaMetrics
-             já compiladas no módulo da UDF (Java 8 bytecode roda normalmente em JVM 21) -->
+        <!-- Spark Core (provided para compatibilidade com classes Spark) -->
         <dependency>
-            <groupId>br.com.itau.odm</groupId>
-            <artifactId>embarcado-95</artifactId>
-            <version>1.0.0</version>
-            <scope>system</scope>
-            <systemPath>${udf95.dir}/target/embarcado-95-1.0.0.jar</systemPath>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-core_2.12</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_2.12</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>${gson.version}</version>
+        </dependency>
+
+        <!-- AWS SDK S3 -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-s3</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+
+        <!-- Kafka -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>3.3.1</version>
         </dependency>
 
         <!-- IBM ODM 9.5 — mesmos jars usados pela UDF -->
@@ -98,7 +117,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Maven AntRun Plugin - Descompacta JARs proprietários IBM e classes da UDF diretamente no Fat JAR -->
+            <!-- Maven AntRun Plugin - Descompacta EXCLUSIVAMENTE os JARs proprietários IBM ORIGINAIS (Java 21) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
@@ -112,7 +131,7 @@
                         </goals>
                         <configuration>
                             <target>
-                                <echo message="Descompactando JARs ODM 9.5 originais (Java 21) e classes da UDF..."/>
+                                <echo message="Descompactando EXCLUSIVAMENTE os JARs ODM 9.5 100% ORIGINAIS da IBM (Java 21)..."/>
                                 <unzip src="${odm95.dir}/jrules-engine.jar"
                                        dest="${project.build.directory}/classes"
                                        overwrite="true"/>
@@ -125,13 +144,10 @@
                                 <unzip src="${odm95.dir}/guicustomization-1.0.jar"
                                        dest="${project.build.directory}/classes"
                                        overwrite="true"/>
-                                <unzip src="${udf95.dir}/lib/license_metric_logger_2.1.2.202009181115.jar"
+                                <unzip src="${project.basedir}/../odm-embarcado-udf-95/lib/license_metric_logger_2.1.2.202009181115.jar"
                                        dest="${project.build.directory}/classes"
                                        overwrite="true"/>
-                                <unzip src="${udf95.dir}/target/embarcado-95-1.0.0.jar"
-                                       dest="${project.build.directory}/classes"
-                                       overwrite="true"/>
-                                <echo message="JARs embutidos com sucesso!"/>
+                                <echo message="JARs 100% originais da IBM embutidos com sucesso!"/>
                             </target>
                         </configuration>
                     </execution>
