@@ -76,17 +76,14 @@ def set_spark(spark_session, ruleset_path):
 
         odm_metrics.set_spark(spark, RULESET_PATH)
     """
-    global _spark, _jvm, _ruleset
+    global _spark, _ruleset
     _spark   = spark_session
-    _jvm     = spark_session.sparkContext._jvm
     _ruleset = ruleset_path
 
 
 def flush(df_result, total_processed, success, errors, elapsed_time_s, start_time_epoch):
     """
-    Envia os relatórios de métricas para o S3.
-    df_result não é utilizado — pode passar None.
-    Os demais parâmetros correspondem ao que já existe no script após o processamento.
+    Envia os relatórios de métricas para o S3 (100% Python nativo, sem chamadas JVM/Py4J).
     """
     global _flushed
 
@@ -98,22 +95,9 @@ def flush(df_result, total_processed, success, errors, elapsed_time_s, start_tim
     start_ms = int(start_time_epoch * 1000)
     dur_ms   = int(elapsed_time_s * 1000)
 
-    # 1. XML customizado (Python nativo — sem dependência do JAR)
+    # XML customizado de métricas e ILMT via Python nativo (sem risco de quebrar o Py4J)
     _send_custom_xml(total_processed, success, errors, dur_ms,
                      _ruleset or "(unknown)", start_ms, end_ms)
-
-    # 2. XML ILMT oficial (via JAR IBM — se JVM disponível e classe existir)
-    if _jvm is not None:
-        try:
-            mgr = _jvm.br.com.itau.odm.embarcado.ODMMetricsManager
-            mgr.flush(
-                int(total_processed), int(success), int(errors),
-                dur_ms, _ruleset or "(unknown)",
-                start_ms, end_ms
-            )
-        except Exception as e:
-            # Em modo Server 21 subprocess, o ILMT oficial é gerado pelo XML customizado acima
-            pass
 
 
 def require_flush():
