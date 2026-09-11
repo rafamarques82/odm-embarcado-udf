@@ -244,23 +244,16 @@ print(f"  ⏱️  Download: {time.time()-t0:.1f}s")
 # 🔧 INICIALIZAR SPARK COM TUNING COMPLETO
 # =============================================================================
 
-print("\n🔧 Inicializando Spark com tuning...")
-
-# --- Configurar System Properties do ODM XU ANTES de criar o SparkContext ---
-os.environ['SPARK_SUBMIT_OPTS'] = (
-    f"-Dilog.rules.res.xu.maxCacheSize={XU_MAX_CACHE_SIZE} "
-    f"-Dilog.rules.res.xu.maxPoolSize={XU_MAX_POOL_SIZE} "
-    f"-Dilog.rules.res.xu.cacheEvictionTimeout={XU_CACHE_EVICTION_MS}"
-)
+print("\n🔧 Inicializando Spark...")
 
 sc = SparkContext()
 glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 
-# Inspecionar versões do ODM, Ruleset e UDF (lendo direto do S3 ou local)
+# Inspecionar versões do ODM, Ruleset e UDF
 inspecionar_metadados_odm(
     ruleset_jar_path=RULESET_JAR_LOCAL,
-    spark_jvm=spark.sparkContext._jvm,
+    spark_jvm=None,
     udf_jar_path="s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar",
     s3_client=s3_client
 )
@@ -275,69 +268,18 @@ job.init(args['JOB_NAME'], args)
 # Injetar SparkSession no módulo de métricas
 odm_metrics.set_spark(spark, RULESET_PATH)
 
-# --- Aplicar tunings via SparkContext (runtime) ---
-jvm = spark.sparkContext._jvm
-jsc = spark.sparkContext._jsc
-
-# 1. ODM XU: System Properties na JVM do driver
-print("\n  ⚙️  Configurando ODM XU (System Properties)...")
-jvm.System.setProperty("ilog.rules.res.xu.maxCacheSize",         str(XU_MAX_CACHE_SIZE))
-jvm.System.setProperty("ilog.rules.res.xu.minPoolSize",          str(XU_MIN_POOL_SIZE))
-jvm.System.setProperty("ilog.rules.res.xu.maxPoolSize",          str(XU_MAX_POOL_SIZE))
-jvm.System.setProperty("ilog.rules.res.xu.poolTimeout",          str(XU_POOL_TIMEOUT_MS))
-jvm.System.setProperty("ilog.rules.res.xu.poolWaitTimeout",      str(XU_POOL_WAIT_MS))
-jvm.System.setProperty("ilog.rules.res.xu.compilationThreads",   str(XU_COMPILATION_THREADS))
-jvm.System.setProperty("ilog.rules.res.xu.cacheEvictionTimeout", str(XU_CACHE_EVICTION_MS))
-jvm.System.setProperty("ilog.rules.res.xu.forceUptodate",        str(XU_FORCE_UPTODATE).lower())
-
-print(f"     maxCacheSize:         {XU_MAX_CACHE_SIZE}")
-print(f"     maxPoolSize:          {XU_MAX_POOL_SIZE}")
-print(f"     cacheEvictionTimeout: {XU_CACHE_EVICTION_MS}ms")
-print(f"     forceUptodate:        {XU_FORCE_UPTODATE}")
-
-# 2. Spark SQL: desabilitar Arrow (incompatível com UDFs Java)
-print("\n  ⚙️  Configurando Spark SQL...")
-spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "false")
-spark.conf.set("spark.sql.execution.arrow.enabled",         "false")
-print("     Arrow desabilitado (incompatível com UDF Java)")
-
-# 3. Shuffle partitions: otimizar para o volume de dados
+# --- Spark SQL & S3 Configs ---
+print("\n  ⚙️  Configurando Spark SQL e S3...")
 spark.conf.set("spark.sql.adaptive.enabled",                "true")
 spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "true")
-spark.conf.set("spark.sql.adaptive.skewJoin.enabled",       "true")
-print("     AQE (Adaptive Query Execution) habilitado")
-
-# 4. S3: otimizar leitura/escrita
-print("\n  ⚙️  Configurando S3...")
 spark.conf.set("spark.hadoop.fs.s3a.multipart.size",         S3_MULTIPART_SIZE)
 spark.conf.set("spark.hadoop.fs.s3a.fast.upload",            "true")
 spark.conf.set("spark.hadoop.fs.s3a.fast.upload.buffer",     "bytebuffer")
 spark.conf.set("spark.hadoop.fs.s3a.connection.maximum",     "100")
 spark.conf.set("spark.hadoop.fs.s3a.threads.max",            "20")
 spark.conf.set("spark.hadoop.fs.s3a.block.size",             S3_BUFFER_SIZE)
-print(f"     multipart.size:  {S3_MULTIPART_SIZE}")
-print(f"     fast.upload:     true")
-print(f"     connections max: 100")
 
-# 5. Broadcast de JARs para todos os executores
-print("\n  ⚙️  Adicionando JARs ao classpath...")
-jsc.addJar(XOM_PATH_LOCAL)
-jsc.addJar(RULESET_JAR_LOCAL)
-print(f"     ✅ XOM:     {XOM_PATH_LOCAL}")
-print(f"     ✅ Ruleset: {RULESET_JAR_LOCAL}")
-
-# 6. Propagar System Properties do ODM para os executores via broadcast
-print("\n  ⚙️  Propagando configurações ODM para executores...")
-xu_props = {
-    "ilog.rules.res.xu.maxCacheSize":         str(XU_MAX_CACHE_SIZE),
-    "ilog.rules.res.xu.maxPoolSize":          str(XU_MAX_POOL_SIZE),
-    "ilog.rules.res.xu.cacheEvictionTimeout": str(XU_CACHE_EVICTION_MS),
-    "ilog.rules.res.xu.forceUptodate":        str(XU_FORCE_UPTODATE).lower(),
-}
-xu_props_broadcast = spark.sparkContext.broadcast(xu_props)
-print(f"     ✅ {len(xu_props)} propriedades propagadas via broadcast")
-
-print("\n✅ Spark inicializado com tuning completo!")
+print("\n✅ Spark inicializado com sucesso!")
 
 # =============================================================================
 # 📝 EXECUÇÃO VIA SERVIDOR STANDALONE JAVA 21 (NÃO REQUER REGISTRO DE UDF JAVA)
