@@ -30,7 +30,7 @@ import json
 import time
 from datetime import datetime
 import odm_metrics
-from odm_subprocess_client import call_odm_via_subprocess
+from odm_subprocess_client import call_odm_via_subprocess, ODM_SERVER_JAR_S3, SERVER_JAR_LOCAL as SERVER_JAR_LOCAL
 import boto3
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
@@ -56,8 +56,6 @@ RULESET_JAR_S3    = "s3://bre-laboratorio/embarcado/bre_visaodorelacionamentoban
 RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
 XOM_JAR_S3        = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
 XOM_PATH_LOCAL    = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
-SERVER_JAR_S3     = "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar"
-SERVER_JAR_LOCAL  = "/tmp/odm-embarcado-server-21-1.0.0.jar"
 
 # --- ODM ---
 RULESET_PATH = "/bre_visaodorelacionamentobancario/1.0/elege_faturamento"
@@ -131,7 +129,7 @@ t0 = time.time()
 for jar_s3, jar_local, label in [
     (RULESET_JAR_S3, RULESET_JAR_LOCAL, "Ruleset"),
     (XOM_JAR_S3,     XOM_PATH_LOCAL,    "XOM"),
-    (SERVER_JAR_S3,  SERVER_JAR_LOCAL,  "Server UDF"),
+    (ODM_SERVER_JAR_S3, SERVER_JAR_LOCAL, "Server UDF"),
 ]:
     try:
         bucket, key = _s3_parse(jar_s3)
