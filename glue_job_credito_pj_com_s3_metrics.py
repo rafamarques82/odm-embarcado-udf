@@ -21,13 +21,98 @@ TUNINGS APLICADOS:
  11. S3 Metrics: relatórios ILMT automáticos
 """
 
+import io
+import xml.etree.ElementTree as ET
+import zipfile
 import sys
 import os
 import json
 import time
 from datetime import datetime
 import odm_metrics
+from odm_subprocess_client import call_odm_via_subprocess
 import boto3
+
+
+def inspecionar_metadados_odm(ruleset_jar_path, spark_jvm=None, udf_jar_path=None):
+    print("\n" + "=" * 80)
+    print("🔍 INFORMAÇÕES DE VERSÃO — ODM, UDF & RULESET")
+    print("=" * 80)
+
+    # 1. Versão do Motor ODM (XU / Decision Engine) via JVM
+    if spark_jvm:
+        try:
+            clazz = spark_jvm.java.lang.Class.forName("com.ibm.rules.res.xu.info.internal.XUSettings")
+            pkg = clazz.getPackage()
+            if pkg and pkg.getImplementationVersion():
+                print(f"  ⚙️  Versão do Motor ODM (XU Runtime): {pkg.getImplementationVersion()}")
+        except Exception:
+            pass
+
+    # 2. Inspecionar versão Java da UDF / Server JAR
+    v_map = {52: "Java 8", 55: "Java 11", 61: "Java 17", 65: "Java 21"}
+    if udf_jar_path and os.path.exists(udf_jar_path):
+        try:
+            with zipfile.ZipFile(udf_jar_path, "r") as uz:
+                for c in uz.namelist():
+                    if (c.endswith("GenericODMUDF.class") or c.endswith("OdmServer.class")) and not c.endswith("module-info.class"):
+                        major = uz.read(c)[7]
+                        print(f"  ☕ Versão Java do UDF/Server JAR:   {v_map.get(major, f'Bytecode {major}')} ({os.path.basename(udf_jar_path)})")
+                        break
+        except Exception as e:
+            print(f"  ⚠️ Não foi possível ler versão do UDF JAR: {e}")
+
+    # 3. Inspecionar o Ruleset JAR
+    if ruleset_jar_path and os.path.exists(ruleset_jar_path):
+        try:
+            with zipfile.ZipFile(ruleset_jar_path, "r") as z:
+                # Ler META-INF/archive.xml
+                if "META-INF/archive.xml" in z.namelist():
+                    xml_content = z.read("META-INF/archive.xml")
+                    root = ET.fromstring(xml_content)
+
+                    ruleapp = root.find("ruleapp")
+                    if ruleapp is not None:
+                        app_name = ruleapp.findtext("ruleapp-name")
+                        app_ver = ruleapp.findtext("ruleapp-version")
+                        print(f"  📦 RuleApp:                        {app_name} v{app_ver}")
+
+                    ruleset = root.find(".//ruleset")
+                    if ruleset is not None:
+                        rs_name = ruleset.findtext("ruleset-name")
+                        rs_ver = ruleset.findtext("ruleset-version")
+                        print(f"  📋 Conjunto de Regras:             {rs_name} (v{rs_ver})")
+
+                        props = {}
+                        for prop in ruleset.findall("ruleset-property"):
+                            p_name = prop.findtext("ruleset-property-name")
+                            p_val = prop.findtext("ruleset-property-value")
+                            if p_name and p_val:
+                                props[p_name] = p_val
+
+                        print(f"  🚀 Versão Decision Engine:         {props.get('ruleset.engine.version', 'N/A')}")
+                        print(f"  🏛️  Decision Center:                 {props.get('decisioncenter.version', 'N/A')}")
+                        print(f"  🌿 Branch / Deployer:                {props.get('decisionservice.branch.name', 'N/A')} (por {props.get('decisionservice.deployer.name', 'N/A')})")
+
+                # Detectar versão do Java no Ruleset
+                for name in z.namelist():
+                    if name.endswith(".dsar"):
+                        dsar_data = z.read(name)
+                        with zipfile.ZipFile(io.BytesIO(dsar_data)) as dz:
+                            if "RULES_ENGINE/default/jar/ruleset.jar" in dz.namelist():
+                                rjar = dz.read("RULES_ENGINE/default/jar/ruleset.jar")
+                                with zipfile.ZipFile(io.BytesIO(rjar)) as rz:
+                                    for c in rz.namelist():
+                                        if c.endswith(".class"):
+                                            major = rz.read(c)[7]
+                                            print(f"  ☕ Versão Java do Ruleset:         {v_map.get(major, f'Bytecode {major}')}")
+                                            break
+                                    break
+                        break
+        except Exception as e:
+            print(f"  ⚠️ Não foi possível ler metadados do Ruleset JAR: {e}")
+
+    print("=" * 80 + "\n")
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
 from pyspark.context import SparkContext
@@ -154,6 +239,9 @@ sc = SparkContext()
 glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 
+# Inspecionar versões do ODM, Ruleset e UDF
+inspecionar_metadados_odm(RULESET_JAR_LOCAL, spark.sparkContext._jvm, "/tmp/odm-server-21/odm-embarcado-server-21.jar")
+
 # =============================================================================
 # ✅ INICIALIZAR JOB
 # =============================================================================
@@ -229,19 +317,8 @@ print(f"     ✅ {len(xu_props)} propriedades propagadas via broadcast")
 print("\n✅ Spark inicializado com tuning completo!")
 
 # =============================================================================
-# 📝 REGISTRAR UDF ODM
+# 📝 EXECUÇÃO VIA SERVIDOR STANDALONE JAVA 21 (NÃO REQUER REGISTRO DE UDF JAVA)
 # =============================================================================
-
-try:
-    spark.udf.registerJavaFunction(
-        "execute_odm",
-        "br.com.itau.odm.embarcado.GenericODMUDF",
-        StringType()
-    )
-    print("✅ UDF ODM registrada")
-except Exception as e:
-    print(f"❌ ERRO ao registrar UDF: {e}")
-    raise
 
 # =============================================================================
 # 📊 LER DADOS DE ENTRADA
@@ -359,12 +436,8 @@ print("=" * 80)
 
 start_time = time.time()
 
-df_result = (
-    df_with_input
-    .withColumn("odm_output",           expr("execute_odm(odm_input)"))
-    .withColumn("processing_timestamp", current_timestamp())
-    .withColumn("job_name",             lit(args['JOB_NAME']))
-)
+# Executa diretamente no servidor Java 21 isolado por executor (sem JOIN/Shuffle)
+df_result = call_odm_via_subprocess(df_with_input, spark, args['JOB_NAME'])
 
 df_result.persist()
 total_processed = df_result.count()
