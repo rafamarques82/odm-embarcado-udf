@@ -36,15 +36,13 @@ from pyspark.sql import Row
 from pyspark.sql.types import StructType, StructField, StringType
 
 # =============================================================================
-# CONFIGURAÇÃO — lida de variáveis de ambiente injetadas pelo script Glue
+# CONFIGURAÇÃO — ajuste para os seus paths reais no S3
 # =============================================================================
 
-JDK21_TARBALL_S3  = os.environ.get("ODM_JDK21_TARBALL_S3",
-                        "s3://bre-laboratorio/embarcado/runtime/amazon-corretto-21-x64-linux-jdk.tar.gz")
-ODM_SERVER_JAR_S3 = os.environ.get("ODM_SERVER_JAR_S3",
-                        "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar")
-RULESET_JAR_LOCAL = os.environ.get("ODM_RULESET_JAR_LOCAL", "/tmp/ruleset.jar")
-XOM_JAR_LOCAL     = os.environ.get("ODM_XOM_JAR_LOCAL",     "/tmp/xom.jar")
+JDK21_TARBALL_S3 = "s3://bre-laboratorio/embarcado/runtime/amazon-corretto-21-x64-linux-jdk.tar.gz"
+ODM_SERVER_JAR_S3 = "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar"
+RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
+XOM_JAR_LOCAL = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
 
 # Diretório local no executor (mesmo filesystem efêmero usado hoje para os jars)
 LOCAL_BASE = "/tmp/odm-server-21"

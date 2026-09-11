@@ -6,7 +6,6 @@
 ✅ S3: multipart upload, buffer size
 ✅ S3 Metrics: envio automático de métricas ILMT para S3
 ✅ Monitoramento: métricas de tempo por registro
-✅ 100% parametrizado via Job Parameters do Glue (sem valores hardcoded)
 
 TUNINGS APLICADOS:
   1. SparkContext com configurações otimizadas
@@ -20,29 +19,6 @@ TUNINGS APLICADOS:
   9. Cache inteligente: só cacheia se necessário
  10. Análise de performance: percentis de tempo
  11. S3 Metrics: relatórios ILMT automáticos
-
-PARÂMETROS DO GLUE JOB (Job Parameters):
-  Obrigatórios:
-    --JOB_NAME
-    --INPUT_PATH              ex: s3://bucket/path/cenarios.json
-    --RULESET_JAR_S3          ex: s3://bucket/path/ruleset.jar
-    --XOM_JAR_S3              ex: s3://bucket/path/xom.jar
-    --ODM_SERVER_JAR_S3       ex: s3://bucket/odm-embarcado-server-21-1.0.0.jar
-    --JDK21_TARBALL_S3        ex: s3://bucket/runtime/amazon-corretto-21-x64-linux-jdk.tar.gz
-    --RULESET_PATH            ex: /ruleapp/1.0/ruleset
-    --INPUT_CLASS             ex: main.java.itau.Cliente
-    --INPUT_PARAM             ex: Cliente
-    --S3_OUTPUT_BUCKET        ex: meu-bucket
-    --S3_OUTPUT_PREFIX        ex: resultados/
-    --S3_REGION               ex: sa-east-1
-    --S3_METRICS_BUCKET       ex: meu-bucket
-    --S3_METRICS_PREFIX       ex: odm-metrics
-    --S3_METRICS_REGION       ex: sa-east-1
-  Opcionais (possuem default):
-    --EXECUTOR_CORES          default: 4
-    --PARALLELISM_OVERRIDE    default: 0  (0 = calcula automaticamente)
-    --S3_MULTIPART_SIZE       default: 128m
-    --S3_BUFFER_SIZE          default: 65536
 """
 
 import io
@@ -53,6 +29,8 @@ import os
 import json
 import time
 from datetime import datetime
+import odm_metrics
+from odm_subprocess_client import call_odm_via_subprocess, ODM_SERVER_JAR_S3, SERVER_JAR_LOCAL as SERVER_JAR_LOCAL
 import boto3
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
@@ -67,69 +45,67 @@ from pyspark.sql.functions import (
 from pyspark.sql.types import StringType, LongType
 
 # =============================================================================
-# 🚀 PARÂMETROS DO GLUE JOB
+# ⚙️ CONFIGURAÇÃO - EDITE AQUI!
+# =============================================================================
+
+# --- Entrada ---
+INPUT_PATH = "s3://bre-laboratorio/embarcado/input/bre-rendaeleita/cenarios_100k.json"
+
+# --- JARs (S3) ---
+RULESET_JAR_S3    = "s3://bre-laboratorio/embarcado/bre_visaodorelacionamentobancario.jar"
+RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
+XOM_JAR_S3        = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
+XOM_PATH_LOCAL    = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
+
+# --- ODM ---
+RULESET_PATH = "/bre_visaodorelacionamentobancario/1.0/elege_faturamento"
+INPUT_CLASS  = "main.java.itau.Cliente"
+INPUT_PARAM  = "Cliente"
+
+# --- S3 Output ---
+S3_OUTPUT_BUCKET = "bre-laboratorio"
+S3_OUTPUT_PREFIX = "embarcado/resultados/rendaeleita/"
+S3_REGION        = "sa-east-1"
+
+# =============================================================================
+# ⚙️ PARÂMETROS DE TUNING - ajuste conforme seu ambiente
+# =============================================================================
+
+# --- Spark ---
+EXECUTOR_MEMORY        = "56g"    # Memória por executor (G.1X=12g, G.2X=28g)
+EXECUTOR_MEMORY_OH     = "1g"     # Overhead JVM (15-20% do executor memory)
+DRIVER_MEMORY          = "8g"     # Memória do driver
+EXECUTOR_CORES         = 16       # Cores por executor (G.1X=3, G.2X=7)
+
+# --- Paralelismo ---
+PARALLELISM_OVERRIDE   = 40       # Para 100k registros
+
+# --- ODM XU (eXecution Unit) ---
+XU_MAX_CACHE_SIZE      = 5        # Rulesets em cache por executor
+XU_CACHE_EVICTION_MS   = 0        # TTL cache (0 = nunca expira)
+XU_FORCE_UPTODATE      = False    # False = usa cache (10x mais rápido!)
+
+# --- S3 ---
+S3_MULTIPART_SIZE      = "128m"   # Tamanho de cada parte no upload multipart
+S3_BUFFER_SIZE         = "65536"  # Buffer de leitura S3 (bytes)
+OUTPUT_COALESCE        = 1        # Número de arquivos de saída (1 = arquivo único)
+
+XU_MIN_POOL_SIZE       = 4   # Pré-aquece sessões (elimina cold starts)
+XU_MAX_POOL_SIZE       = 80  # = EXECUTOR_CORES
+XU_POOL_TIMEOUT_MS     = 90000
+XU_POOL_WAIT_MS        = 45000
+XU_COMPILATION_THREADS = 20   # Threads para compilar regras
+
+# =============================================================================
+# 🚀 INÍCIO
 # =============================================================================
 
 args = getResolvedOptions(sys.argv, [
     'JOB_NAME',
-    # --- Entrada ---
-    'INPUT_PATH',
-    # --- JARs ---
-    'RULESET_JAR_S3',
-    'XOM_JAR_S3',
-    'ODM_SERVER_JAR_S3',
-    'JDK21_TARBALL_S3',
-    # --- ODM ---
-    'RULESET_PATH',
-    'INPUT_CLASS',
-    'INPUT_PARAM',
-    # --- S3 Output ---
-    'S3_OUTPUT_BUCKET',
-    'S3_OUTPUT_PREFIX',
-    'S3_REGION',
-    # --- Métricas ILMT ---
     'S3_METRICS_BUCKET',
     'S3_METRICS_PREFIX',
     'S3_METRICS_REGION',
 ])
-
-# Parâmetros opcionais com defaults
-def _opt(name, default):
-    try:
-        v = getResolvedOptions(sys.argv, [name])[name]
-        return v if v != '' else default
-    except Exception:
-        return default
-
-EXECUTOR_CORES       = int(_opt('EXECUTOR_CORES', '16'))
-PARALLELISM_OVERRIDE = int(_opt('PARALLELISM_OVERRIDE', '40'))
-S3_MULTIPART_SIZE    = _opt('S3_MULTIPART_SIZE', '128m')
-S3_BUFFER_SIZE       = _opt('S3_BUFFER_SIZE', '65536')
-
-# Atalhos para os args mais usados
-INPUT_PATH         = args['INPUT_PATH']
-RULESET_JAR_S3     = args['RULESET_JAR_S3']
-XOM_JAR_S3         = args['XOM_JAR_S3']
-RULESET_PATH       = args['RULESET_PATH']
-INPUT_CLASS        = args['INPUT_CLASS']
-INPUT_PARAM        = args['INPUT_PARAM']
-S3_OUTPUT_BUCKET   = args['S3_OUTPUT_BUCKET']
-S3_OUTPUT_PREFIX   = args['S3_OUTPUT_PREFIX']
-S3_REGION          = args['S3_REGION']
-
-# Paths locais derivados do nome do JAR S3
-RULESET_JAR_LOCAL = f"/tmp/{RULESET_JAR_S3.rstrip('/').split('/')[-1]}"
-XOM_PATH_LOCAL    = f"/tmp/{XOM_JAR_S3.rstrip('/').split('/')[-1]}"
-
-# Injetar variáveis de ambiente para o odm_subprocess_client ANTES do import
-os.environ["ODM_SERVER_JAR_S3"]    = args['ODM_SERVER_JAR_S3']
-os.environ["ODM_JDK21_TARBALL_S3"] = args['JDK21_TARBALL_S3']
-os.environ["ODM_RULESET_JAR_LOCAL"] = RULESET_JAR_LOCAL
-os.environ["ODM_XOM_JAR_LOCAL"]    = XOM_PATH_LOCAL
-
-# Agora é seguro importar (as env vars já estão definidas)
-import odm_metrics
-from odm_subprocess_client import call_odm_via_subprocess, ODM_SERVER_JAR_S3, SERVER_JAR_LOCAL
 
 print("🚀 AWS GLUE JOB - Crédito PJ (Full Tuning + S3 Metrics)")
 print("=" * 80)
