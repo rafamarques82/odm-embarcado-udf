@@ -84,6 +84,9 @@ def set_spark(spark_session, ruleset_path):
 def flush(df_result, total_processed, success, errors, elapsed_time_s, start_time_epoch):
     """
     Envia os relatórios de métricas para o S3 (100% Python nativo, sem chamadas JVM/Py4J).
+    Gera dois arquivos:
+      - ilmt-report-{ts}.xml   : formato oficial IBM ILMT (SchemaVersion 2.1.1)
+      - custom-report-{ts}.xml : métricas adicionais de execução (ODMExecutionSummary)
     """
     global _flushed
 
@@ -95,9 +98,10 @@ def flush(df_result, total_processed, success, errors, elapsed_time_s, start_tim
     start_ms = int(start_time_epoch * 1000)
     dur_ms   = int(elapsed_time_s * 1000)
 
-    # XML customizado de métricas e ILMT via Python nativo (sem risco de quebrar o Py4J)
-    _send_custom_xml(total_processed, success, errors, dur_ms,
-                     _ruleset or "(unknown)", start_ms, end_ms)
+    ruleset = _ruleset or "(unknown)"
+
+    _send_ilmt_xml(total_processed, ruleset, start_ms, end_ms)
+    _send_custom_xml(total_processed, success, errors, dur_ms, ruleset, start_ms, end_ms)
 
 
 def require_flush():
@@ -120,33 +124,96 @@ def _flush_on_exit():
         print("[odm_metrics] AVISO: job terminou sem chamar flush() — métricas não enviadas.")
 
 
-def _send_custom_xml(total, ok, errors, dur_ms, ruleset, start_ms, end_ms):
-    """Gera e envia o XML customizado de métricas para o S3."""
+def _send_ilmt_xml(total, ruleset, start_ms, end_ms):
+    """Gera e envia o relatório ILMT oficial IBM (SchemaVersion 2.1.1) para o S3."""
     try:
         import boto3
 
-        avg_ms = dur_ms // total if total > 0 else 0
-
         def fmt(ms):
-            return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%S.000+0000"
+            )
+
+        # Calcular métrica ILMT: MILLION_MONTHLY_DECISIONS ou THOUSAND_MONTHLY_ARTIFACTS
+        double_m = round(total / 1_000_000.0, 3)
+        if double_m >= 1.0:
+            metric_type  = "MILLION_MONTHLY_DECISIONS"
+            metric_value = f"{double_m:.3f}"
+        else:
+            double_k     = round(total / 1_000.0, 3)
+            metric_type  = "THOUSAND_MONTHLY_ARTIFACTS"
+            metric_value = f"{double_k:.3f}"
+
+        log_time = fmt(end_ms)
 
         xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<ODMMetrics>\n'
-            '  <Summary>\n'
-            f'    <TotalExecucoes>{total}</TotalExecucoes>\n'
-            f'    <Sucesso>{ok}</Sucesso>\n'
-            f'    <Erros>{errors}</Erros>\n'
-            f'    <DuracaoTotalMs>{dur_ms}</DuracaoTotalMs>\n'
-            f'    <DuracaoMediaMs>{avg_ms}</DuracaoMediaMs>\n'
-            f'    <RuleSet>{ruleset}</RuleSet>\n'
+            '<SchemaVersion>2.1.1</SchemaVersion>\n'
+            '<SoftwareIdentity>\n'
+            '  <PersistentId>b1a07d4dc0364452aa6206bb6584061d</PersistentId>\n'
+            '  <Name>IBM Operational Decision Manager Server</Name>\n'
+            '  <InstanceId>/usr/IBM/TAMIT</InstanceId>\n'
+            '</SoftwareIdentity>\n'
+            f'<Metric logTime="{log_time}">\n'
+            f'  <Type>{metric_type}</Type>\n'
+            '  <SubType></SubType>\n'
+            f'  <Value>{metric_value}</Value>\n'
+            '  <Period>\n'
             f'    <StartTime>{fmt(start_ms)}</StartTime>\n'
             f'    <EndTime>{fmt(end_ms)}</EndTime>\n'
-            '  </Summary>\n'
-            '</ODMMetrics>'
+            '  </Period>\n'
+            f'  <RulesetPath>{ruleset}</RulesetPath>\n'
+            '</Metric>\n'
         )
 
-        prefix = _prefix.rstrip("/") + "/"
+        prefix    = _prefix.rstrip("/") + "/"
+        partition = datetime.fromtimestamp(end_ms / 1000, tz=timezone.utc).strftime("%Y/%m/%d/%H")
+        key = f"{prefix}{partition}/ilmt-report-{end_ms}.xml"
+
+        s3 = boto3.client("s3", region_name=_region)
+        s3.put_object(Bucket=_bucket, Key=key, Body=xml.encode("utf-8"),
+                      ContentType="application/xml")
+
+        print(f"[odm_metrics] ✅ ILMT report enviado:     s3://{_bucket}/{key}")
+        print(f"[odm_metrics]    Métrica: {metric_type} = {metric_value}")
+
+    except Exception as e:
+        print(f"[odm_metrics] ❌ Erro ao enviar ILMT report: {e}")
+
+
+def _send_custom_xml(total, ok, errors, dur_ms, ruleset, start_ms, end_ms):
+    """Gera e envia o XML customizado (ODMExecutionSummary) de métricas para o S3."""
+    try:
+        import boto3
+
+        avg_ms = dur_ms / total if total > 0 else 0
+
+        def fmt(ms):
+            return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%S.000+0000"
+            )
+
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<ODMExecutionSummary>\n'
+            f'  <RulesetPath>{ruleset}</RulesetPath>\n'
+            '  <TimeWindow>\n'
+            f'    <Start>{fmt(start_ms)}</Start>\n'
+            f'    <End>{fmt(end_ms)}</End>\n'
+            '  </TimeWindow>\n'
+            '  <Executions>\n'
+            f'    <Total>{total}</Total>\n'
+            f'    <Success>{ok}</Success>\n'
+            f'    <Errors>{errors}</Errors>\n'
+            '  </Executions>\n'
+            '  <Performance>\n'
+            f'    <TotalDurationMs>{dur_ms}</TotalDurationMs>\n'
+            f'    <AverageDurationMs>{avg_ms:.2f}</AverageDurationMs>\n'
+            '  </Performance>\n'
+            '</ODMExecutionSummary>'
+        )
+
+        prefix    = _prefix.rstrip("/") + "/"
         partition = datetime.fromtimestamp(end_ms / 1000, tz=timezone.utc).strftime("%Y/%m/%d/%H")
         key = f"{prefix}{partition}/custom-report-{end_ms}.xml"
 
@@ -154,10 +221,10 @@ def _send_custom_xml(total, ok, errors, dur_ms, ruleset, start_ms, end_ms):
         s3.put_object(Bucket=_bucket, Key=key, Body=xml.encode("utf-8"),
                       ContentType="application/xml")
 
-        print(f"[odm_metrics] ✅ XML customizado enviado: s3://{_bucket}/{key}")
+        print(f"[odm_metrics] ✅ Custom report enviado:   s3://{_bucket}/{key}")
 
     except Exception as e:
-        print(f"[odm_metrics] ❌ Erro ao enviar XML customizado: {e}")
+        print(f"[odm_metrics] ❌ Erro ao enviar custom report: {e}")
 
 
 # ─── Auto-init na importação ─────────────────────────────────────────────────
