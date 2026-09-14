@@ -11,7 +11,7 @@ Uso no job Glue, no lugar de:
 
 usar:
 
-    df_result = call_odm_via_subprocess(df_with_input, odm_config)
+    df_result = call_odm_via_subprocess(df_with_input, spark, job_name)
 
 Estratégia:
   - Um processo OdmServer por EXECUTOR (não por partição, não por registro).
@@ -20,8 +20,10 @@ Estratégia:
     várias tasks/cores do mesmo executor podem cair na mesma função ao mesmo
     tempo) e depois processa todos os registros da partição na mesma conexão
     TCP (keep-alive), evitando reabrir socket por registro.
-  - O daemon já baixado nos executores via `sc.addFile`/broadcast do jar e do
-    JDK 21 (feito uma vez pelo driver, no início do job).
+  - JARs (Server, Ruleset, XOM) e JDK 21 são baixados do S3 diretamente
+    no executor na primeira execução (idempotente: não baixa se já existir).
+  - Os paths S3 são injetados via variáveis de ambiente pelo script Glue
+    antes do import deste módulo.
 """
 
 import json

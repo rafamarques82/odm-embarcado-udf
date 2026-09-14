@@ -50,7 +50,7 @@ from pyspark.sql.types import StringType, LongType
 INPUT_PATH = "s3://bre-laboratorio/embarcado/input/bre-rendaeleita/cenarios_100k.json"
 
 # --- JARs (S3) ---
-RULESET_JAR_S3    = "s3://bre-laboratorio/embarcado/bre_visaodorelacionamentobancario.jar"
+RULESET_JAR_S3    = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/bre_visaodorelacionamentobancario.jar"
 RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
 XOM_JAR_S3        = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
 XOM_PATH_LOCAL    = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
