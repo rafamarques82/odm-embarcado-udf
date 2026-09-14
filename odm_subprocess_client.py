@@ -118,7 +118,7 @@ def _is_server_up(port: int) -> bool:
         return False
 
 
-def _ensure_server_running():
+def _ensure_server_running(ruleset_jar_s3, ruleset_jar_local, xom_jar_s3, xom_jar_local):
     """Garante que existe um OdmServer de pé em 127.0.0.1:SERVER_PORT neste executor.
     Usa lock de arquivo (fcntl) porque múltiplas tasks/threads do mesmo executor
     podem chamar isto concorrentemente — só uma deve efetivamente subir o processo."""
@@ -139,9 +139,9 @@ def _ensure_server_running():
         server_jar = _ensure_server_jar()
 
         # Garantir que Ruleset e XOM JARs estão presentes no executor
-        for s3_uri, local_path, label in [
-            (RULESET_JAR_S3, RULESET_JAR_LOCAL, "Ruleset"),
-            (XOM_JAR_S3,     XOM_JAR_LOCAL,     "XOM"),
+        for s3_uri, local_path in [
+            (ruleset_jar_s3, ruleset_jar_local),
+            (xom_jar_s3,     xom_jar_local),
         ]:
             if s3_uri and not os.path.exists(local_path):
                 _download_from_s3(s3_uri, local_path)
@@ -153,10 +153,10 @@ def _ensure_server_running():
 
         # Constrói o classpath incluindo o Server JAR, o Ruleset JAR e o XOM JAR
         cp_elements = [server_jar]
-        if os.path.exists(RULESET_JAR_LOCAL):
-            cp_elements.append(RULESET_JAR_LOCAL)
-        if os.path.exists(XOM_JAR_LOCAL):
-            cp_elements.append(XOM_JAR_LOCAL)
+        if os.path.exists(ruleset_jar_local):
+            cp_elements.append(ruleset_jar_local)
+        if os.path.exists(xom_jar_local):
+            cp_elements.append(xom_jar_local)
         classpath = ":".join(cp_elements)
 
         subprocess.Popen(
@@ -195,12 +195,19 @@ class _OdmConnection:
     os registros de uma partição (keep-alive), com uma tentativa de reconexão
     caso o servidor tenha sido reciclado (idle timeout) entre um registro e outro."""
 
-    def __init__(self):
+    def __init__(self, ruleset_jar_s3, ruleset_jar_local, xom_jar_s3, xom_jar_local):
         self._sock = None
         self._reader = None
+        self._ruleset_jar_s3   = ruleset_jar_s3
+        self._ruleset_jar_local = ruleset_jar_local
+        self._xom_jar_s3       = xom_jar_s3
+        self._xom_jar_local    = xom_jar_local
 
     def _connect(self):
-        _ensure_server_running()
+        _ensure_server_running(
+            self._ruleset_jar_s3, self._ruleset_jar_local,
+            self._xom_jar_s3,     self._xom_jar_local,
+        )
         self._sock = socket.create_connection(("127.0.0.1", SERVER_PORT), timeout=60)
         self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self._reader = self._sock.makefile("r", encoding="utf-8", buffering=65536)
@@ -231,10 +238,10 @@ class _OdmConnection:
         self._reader = None
 
 
-def _process_partition_direct(job_name):
+def _process_partition_direct(job_name, ruleset_jar_s3, ruleset_jar_local, xom_jar_s3, xom_jar_local):
     def _partition_fn(rows):
         import datetime
-        conn = _OdmConnection()
+        conn = _OdmConnection(ruleset_jar_s3, ruleset_jar_local, xom_jar_s3, xom_jar_local)
         try:
             for row in rows:
                 row_dict = row.asDict()
@@ -258,10 +265,14 @@ def _process_partition_direct(job_name):
     return _partition_fn
 
 
-def call_odm_via_subprocess(df_with_input, spark, job_name="glue_job"):
-    """Transforma diretamente sem necessitar de JOIN (elimina shuffle de rede)."""
+def call_odm_via_subprocess(df_with_input, spark, job_name="glue_job",
+                             ruleset_jar_s3="", ruleset_jar_local="",
+                             xom_jar_s3="",     xom_jar_local=""):
+    """Transforma diretamente sem necessitar de JOIN (elimina shuffle de rede).
+    Os paths S3/local do Ruleset e XOM são passados como closure para os executores,
+    garantindo que JARs dinâmicos (por projeto/regra) sejam baixados corretamente.
+    """
     from pyspark.sql.types import TimestampType
-    
     result_schema = StructType([
         StructField("record_id", df_with_input.schema["record_id"].dataType, False),
         StructField("odm_input", StringType(), True),
@@ -269,4 +280,6 @@ def call_odm_via_subprocess(df_with_input, spark, job_name="glue_job"):
         StructField("processing_timestamp", TimestampType(), True),
         StructField("job_name", StringType(), True),
     ])
-    return df_with_input.rdd.mapPartitions(_process_partition_direct(job_name)).toDF(result_schema)
+    return df_with_input.rdd.mapPartitions(
+        _process_partition_direct(job_name, ruleset_jar_s3, ruleset_jar_local, xom_jar_s3, xom_jar_local)
+    ).toDF(result_schema)

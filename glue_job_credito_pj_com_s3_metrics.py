@@ -100,12 +100,9 @@ XU_COMPILATION_THREADS = 20   # Threads para compilar regras
 # 🚀 INÍCIO
 # =============================================================================
 
-# Injetar paths S3 para o odm_subprocess_client antes do import
-os.environ["ODM_SERVER_JAR_S3"]     = ODM_SERVER_JAR_S3
-os.environ["ODM_RULESET_JAR_S3"]    = RULESET_JAR_S3
-os.environ["ODM_RULESET_JAR_LOCAL"] = RULESET_JAR_LOCAL
-os.environ["ODM_XOM_JAR_S3"]        = XOM_JAR_S3
-os.environ["ODM_XOM_JAR_LOCAL"]     = XOM_PATH_LOCAL
+# Injetar ODM_SERVER_JAR_S3 para o odm_subprocess_client antes do import
+# (Ruleset e XOM são passados via closure em call_odm_via_subprocess)
+os.environ["ODM_SERVER_JAR_S3"] = ODM_SERVER_JAR_S3
 
 import odm_metrics
 from odm_subprocess_client import call_odm_via_subprocess, SERVER_JAR_LOCAL
@@ -358,7 +355,11 @@ print("=" * 80)
 start_time = time.time()
 
 # Executa diretamente sem join/shuffle
-df_result = call_odm_via_subprocess(df_with_input, spark, args['JOB_NAME'])
+df_result = call_odm_via_subprocess(
+    df_with_input, spark, args['JOB_NAME'],
+    ruleset_jar_s3=RULESET_JAR_S3,   ruleset_jar_local=RULESET_JAR_LOCAL,
+    xom_jar_s3=XOM_JAR_S3,           xom_jar_local=XOM_PATH_LOCAL,
+)
 
 df_result.persist()
 total_processed = df_result.count()
