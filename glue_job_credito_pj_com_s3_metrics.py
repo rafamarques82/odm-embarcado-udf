@@ -332,10 +332,10 @@ def create_odm_input(row):
     row_dict = row.asDict(recursive=True)
     record_id = row_dict.pop('record_id')
     decision_id = row_dict.get('DecisionID_', None)
-    cliente_data = row_dict.get('Cliente', {})
+    input_data = row_dict.get(INPUT_PARAM, {})
     if decision_id:
-        cliente_data['DecisionID_'] = decision_id
-    payload = '{"__config__":' + config_odm_json + ',"data":' + json.dumps(cliente_data) + '}'
+        input_data['DecisionID_'] = decision_id
+    payload = '{"__config__":' + config_odm_json + ',"data":' + json.dumps(input_data) + '}'
     return (record_id, payload)
 
 t0 = time.time()
