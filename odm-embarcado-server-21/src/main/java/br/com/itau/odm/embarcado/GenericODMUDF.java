@@ -71,25 +71,39 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
             System.out.println("[GenericODMUDF-DEBUG] Config keys: " + config.keySet());
             
             String rulesetPath = (String) config.get("ruleset_path");
-            System.out.println("[GenericODMUDF-DEBUG] rulesetPath extraído: '" + rulesetPath + "'");
-            String inputClassName = (String) config.get("input_class");
-            String inputParamName = (String) config.get("input_param_name");
             List<String> outputParamNames = (List<String>) config.get("output_param_names");
             Map<String, String> typeMapping = (Map<String, String>) config.get("type_mapping");
-            
-            Map<String, Object> inputObjectData = (Map<String, Object>) inputData.get("data");
-            
-            Object inputObject = createObjectFromData(
-                inputClassName, inputObjectData, 
-                typeMapping != null ? typeMapping : new HashMap<>()
-            );
-            
+            if (typeMapping == null) typeMapping = new HashMap<>();
+
+            Map<String, Object> allData = (Map<String, Object>) inputData.get("data");
+
+            // --- Suporte a múltiplos inputs ---
+            // Formato novo: input_params = [{"name": "X", "class": "a.b.X", "data_key": "x"}, ...]
+            // Formato legado: input_class + input_param_name (retrocompatível)
+            Map<String, Object> inputParams = new HashMap<>();
+            List<Map<String, Object>> inputParamsList =
+                (List<Map<String, Object>>) config.get("input_params");
+
+            if (inputParamsList != null && !inputParamsList.isEmpty()) {
+                for (Map<String, Object> paramDef : inputParamsList) {
+                    String paramName  = (String) paramDef.get("name");
+                    String paramClass = (String) paramDef.get("class");
+                    String dataKey    = paramDef.containsKey("data_key")
+                            ? (String) paramDef.get("data_key") : paramName;
+                    Map<String, Object> paramData = (Map<String, Object>) allData.get(dataKey);
+                    if (paramData == null) paramData = new HashMap<>();
+                    inputParams.put(paramName, createObjectFromData(paramClass, paramData, typeMapping));
+                }
+            } else {
+                String inputClassName = (String) config.get("input_class");
+                String inputParamName = (String) config.get("input_param_name");
+                Object inputObject = createObjectFromData(inputClassName, allData, typeMapping);
+                inputParams.put(inputParamName, inputObject);
+            }
+
             IlrSessionRequest request = sessionFactory.createRequest();
             request.setRulesetPath(IlrPath.parsePath(rulesetPath));
             request.setForceUptodate(true);
-            
-            Map<String, Object> inputParams = new HashMap<>();
-            inputParams.put(inputParamName, inputObject);
             request.setInputParameters(inputParams);
             
             IlrStatelessSession session = sessionFactory.createStatelessSession();
@@ -106,7 +120,7 @@ public class GenericODMUDF implements UDF1<String, String>, Serializable {
             }
             
             long executionTimeMs = (System.nanoTime() - startTime) / 1_000_000L;
-            outputData.put("__DecisionID__", generateDecisionId(inputObjectData));
+            outputData.put("__DecisionID__", generateDecisionId(allData));
             outputData.put("__ExecutionTimeMs__", executionTimeMs);
             
             // Coletar métricas de execução usando reflection (mesmo método do FacadeStatelessSession)
