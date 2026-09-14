@@ -54,7 +54,8 @@ RULESET_JAR_S3    = "s3://bre-laboratorio/embarcado/bre_visaodorelacionamentoban
 RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
 XOM_JAR_S3        = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
 XOM_PATH_LOCAL    = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
-ODM_SERVER_JAR_S3 = "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar"
+ODM_SERVER_JAR_S3       = "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar"
+ODM_SERVER_JAR_LOCAL_DRV = "/tmp/odm-embarcado-server-21-1.0.0.jar"  # path no driver (só para inspeção)
 
 # --- ODM ---
 RULESET_PATH = "/bre_visaodorelacionamentobancario/1.0/elege_faturamento"
@@ -134,7 +135,7 @@ t0 = time.time()
 for jar_s3, jar_local, label in [
     (RULESET_JAR_S3, RULESET_JAR_LOCAL, "Ruleset"),
     (XOM_JAR_S3,     XOM_PATH_LOCAL,    "XOM"),
-    (ODM_SERVER_JAR_S3, SERVER_JAR_LOCAL, "Server UDF"),
+    (ODM_SERVER_JAR_S3, ODM_SERVER_JAR_LOCAL_DRV, "Server UDF"),
 ]:
     try:
         bucket, key = _s3_parse(jar_s3)
@@ -206,7 +207,7 @@ def inspecionar_metadados_odm(ruleset_jar_path):
     # --- Versão Java do Server UDF JAR ---
     try:
         v_map = {52: "Java 8", 55: "Java 11", 61: "Java 17", 65: "Java 21"}
-        with zipfile.ZipFile(SERVER_JAR_LOCAL, "r") as z:
+        with zipfile.ZipFile(ODM_SERVER_JAR_LOCAL_DRV, "r") as z:
             for name in z.namelist():
                 if name.endswith(".class") and not name.startswith("META-INF"):
                     major = z.read(name)[7]
