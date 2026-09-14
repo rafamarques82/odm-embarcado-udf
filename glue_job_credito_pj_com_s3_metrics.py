@@ -100,8 +100,12 @@ XU_COMPILATION_THREADS = 20   # Threads para compilar regras
 # 🚀 INÍCIO
 # =============================================================================
 
-# Injetar ODM_SERVER_JAR_S3 para o odm_subprocess_client antes do import
-os.environ["ODM_SERVER_JAR_S3"] = ODM_SERVER_JAR_S3
+# Injetar paths S3 para o odm_subprocess_client antes do import
+os.environ["ODM_SERVER_JAR_S3"]     = ODM_SERVER_JAR_S3
+os.environ["ODM_RULESET_JAR_S3"]    = RULESET_JAR_S3
+os.environ["ODM_RULESET_JAR_LOCAL"] = RULESET_JAR_LOCAL
+os.environ["ODM_XOM_JAR_S3"]        = XOM_JAR_S3
+os.environ["ODM_XOM_JAR_LOCAL"]     = XOM_PATH_LOCAL
 
 import odm_metrics
 from odm_subprocess_client import call_odm_via_subprocess, SERVER_JAR_LOCAL

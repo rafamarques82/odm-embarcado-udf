@@ -42,8 +42,12 @@ from pyspark.sql.types import StructType, StructField, StringType
 JDK21_TARBALL_S3  = "s3://bre-laboratorio/embarcado/runtime/amazon-corretto-21-x64-linux-jdk.tar.gz"
 ODM_SERVER_JAR_S3 = os.environ.get("ODM_SERVER_JAR_S3",
                         "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar")
-RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
-XOM_JAR_LOCAL = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
+RULESET_JAR_S3    = os.environ.get("ODM_RULESET_JAR_S3", "")
+RULESET_JAR_LOCAL = os.environ.get("ODM_RULESET_JAR_LOCAL",
+                        "/tmp/bre_visaodorelacionamentobancario.jar")
+XOM_JAR_S3        = os.environ.get("ODM_XOM_JAR_S3", "")
+XOM_JAR_LOCAL     = os.environ.get("ODM_XOM_JAR_LOCAL",
+                        "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar")
 
 # Diretório local no executor (mesmo filesystem efêmero usado hoje para os jars)
 LOCAL_BASE = "/tmp/odm-server-21"
@@ -132,11 +136,19 @@ def _ensure_server_running():
         java_bin = _ensure_jdk21()
         server_jar = _ensure_server_jar()
 
+        # Garantir que Ruleset e XOM JARs estão presentes no executor
+        for s3_uri, local_path, label in [
+            (RULESET_JAR_S3, RULESET_JAR_LOCAL, "Ruleset"),
+            (XOM_JAR_S3,     XOM_JAR_LOCAL,     "XOM"),
+        ]:
+            if s3_uri and not os.path.exists(local_path):
+                _download_from_s3(s3_uri, local_path)
+
         if os.path.exists(READY_FILE):
             os.remove(READY_FILE)
 
         log_fh = open(LOG_FILE, "a")
-        
+
         # Constrói o classpath incluindo o Server JAR, o Ruleset JAR e o XOM JAR
         cp_elements = [server_jar]
         if os.path.exists(RULESET_JAR_LOCAL):
