@@ -54,8 +54,9 @@ RULESET_JAR_S3    = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/bre_vis
 RULESET_JAR_LOCAL = "/tmp/bre_visaodorelacionamentobancario.jar"
 XOM_JAR_S3        = "s3://bre-laboratorio/embarcado/jars/bre-rendaeleita/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
 XOM_PATH_LOCAL    = "/tmp/XOM-VisaoDoRelacionamentoBancario-FaturamentoEleito-3.4.0.jar"
-ODM_SERVER_JAR_S3       = "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar"
+ODM_SERVER_JAR_S3        = "s3://bre-laboratorio/odm-embarcado-server-21-1.0.0.jar"
 ODM_SERVER_JAR_LOCAL_DRV = "/tmp/odm-embarcado-server-21-1.0.0.jar"  # path no driver (só para inspeção)
+JDK21_TARBALL_S3         = "s3://bre-laboratorio/embarcado/runtime/amazon-corretto-21-x64-linux-jdk.tar.gz"
 
 # --- ODM ---
 RULESET_PATH = "/bre_visaodorelacionamentobancario/1.0/elege_faturamento"
@@ -100,9 +101,10 @@ XU_COMPILATION_THREADS = 20   # Threads para compilar regras
 # 🚀 INÍCIO
 # =============================================================================
 
-# Injetar ODM_SERVER_JAR_S3 para o odm_subprocess_client antes do import
+# Injetar paths S3 para o odm_subprocess_client antes do import
 # (Ruleset e XOM são passados via closure em call_odm_via_subprocess)
-os.environ["ODM_SERVER_JAR_S3"] = ODM_SERVER_JAR_S3
+os.environ["ODM_SERVER_JAR_S3"]    = ODM_SERVER_JAR_S3
+os.environ["ODM_JDK21_TARBALL_S3"] = JDK21_TARBALL_S3
 
 import odm_metrics
 from odm_subprocess_client import call_odm_via_subprocess, SERVER_JAR_LOCAL
